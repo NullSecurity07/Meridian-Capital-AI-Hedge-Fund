@@ -2,15 +2,16 @@ import yahooFinance from 'yahoo-finance2'
 import type { Quote, OHLCVBar, NewsItem } from '@/types'
 
 export async function getQuote(symbol: string): Promise<Quote> {
-  const raw = await yahooFinance.quote(symbol)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw = await yahooFinance.quote(symbol) as any
   return {
-    symbol: raw.symbol,
-    price: raw.regularMarketPrice ?? 0,
-    change: raw.regularMarketChange ?? 0,
-    changePct: raw.regularMarketChangePercent ?? 0,
-    volume: raw.regularMarketVolume ?? 0,
-    marketCap: raw.marketCap,
-    pe: raw.trailingPE,
+    symbol: raw.symbol as string,
+    price: (raw.regularMarketPrice as number | undefined) ?? 0,
+    change: (raw.regularMarketChange as number | undefined) ?? 0,
+    changePct: (raw.regularMarketChangePercent as number | undefined) ?? 0,
+    volume: (raw.regularMarketVolume as number | undefined) ?? 0,
+    marketCap: raw.marketCap as number | undefined,
+    pe: raw.trailingPE as number | undefined,
     timestamp: Date.now(),
   }
 }
@@ -20,14 +21,15 @@ export async function getHistoricalBars(
   startDate: string,
   endDate: string
 ): Promise<OHLCVBar[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const raw = await yahooFinance.historical(symbol, {
     period1: startDate,
     period2: endDate,
     interval: '1d',
-  })
+  }) as any[]
   return raw
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    .map(bar => ({
+    .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .map((bar: any) => ({
       date: new Date(bar.date).toISOString().split('T')[0],
       open: bar.open,
       high: bar.high,
