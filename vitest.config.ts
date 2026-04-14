@@ -1,8 +1,11 @@
 import { defineConfig } from 'vitest/config'
-import tsconfigPaths from 'vite-tsconfig-paths'
 
 export default defineConfig({
-  plugins: [tsconfigPaths()],
+  resolve: {
+    alias: {
+      '@': '/home/nullsec/Desktop/cl',
+    },
+  },
   test: {
     environment: 'node',
     globals: true,
