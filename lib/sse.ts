@@ -20,8 +20,9 @@ export function broadcast(event: SSEEvent): void {
   for (const listener of listeners.values()) {
     try {
       listener(event)
-    } catch {
-      // Never let one bad listener break others
+    } catch (err) {
+      // Never let one bad listener break others — but log for observability
+      console.error('[SSE broadcast error]', err)
     }
   }
 }
