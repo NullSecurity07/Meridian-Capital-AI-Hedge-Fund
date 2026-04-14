@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { getQuote, getHistoricalBars, getNewsHeadlines } from '@/lib/market-data'
 
 vi.mock('yahoo-finance2', () => ({
@@ -20,6 +20,7 @@ vi.mock('yahoo-finance2', () => ({
 }))
 
 global.fetch = vi.fn().mockResolvedValue({
+  ok: true,
   json: vi.fn().mockResolvedValue({
     feed: [
       {
@@ -59,5 +60,19 @@ describe('getNewsHeadlines', () => {
     expect(news).toHaveLength(1)
     expect(news[0].title).toContain('NVIDIA')
     expect(news[0].sentiment).toBe('positive')
+  })
+})
+
+describe('getNewsHeadlines with no API key', () => {
+  afterEach(() => {
+    delete process.env.ALPHA_VANTAGE_KEY
+  })
+
+  it('returns empty array when ALPHA_VANTAGE_KEY is not set', async () => {
+    const saved = process.env.ALPHA_VANTAGE_KEY
+    delete process.env.ALPHA_VANTAGE_KEY
+    const news = await getNewsHeadlines('NVDA')
+    expect(news).toHaveLength(0)
+    process.env.ALPHA_VANTAGE_KEY = saved
   })
 })

@@ -37,14 +37,23 @@ export async function getHistoricalBars(
     }))
 }
 
+interface AlphaVantageNewsItem {
+  title: string
+  summary: string
+  url: string
+  time_published: string
+  overall_sentiment_label: string
+}
+
 export async function getNewsHeadlines(symbol: string): Promise<NewsItem[]> {
   const apiKey = process.env.ALPHA_VANTAGE_KEY
   if (!apiKey) return []
   const url = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${symbol}&limit=10&apikey=${apiKey}`
   const res = await fetch(url)
-  const data = await res.json() as { feed?: Record<string, string>[] }
+  if (!res.ok) throw new Error(`Alpha Vantage request failed: HTTP ${res.status}`)
+  const data = await res.json() as { feed?: AlphaVantageNewsItem[] }
   if (!data.feed) return []
-  return data.feed.map(item => ({
+  return data.feed.map((item: AlphaVantageNewsItem) => ({
     title: item.title,
     summary: item.summary,
     url: item.url,
@@ -54,9 +63,11 @@ export async function getNewsHeadlines(symbol: string): Promise<NewsItem[]> {
 }
 
 function parseAlphaVantageDate(str: string): number {
-  // Format: "20260414T093000"
-  const iso = `${str.slice(0, 4)}-${str.slice(4, 6)}-${str.slice(6, 8)}T${str.slice(9, 11)}:${str.slice(11, 13)}:${str.slice(13, 15)}Z`
-  return new Date(iso).getTime()
+  // Input format: "20260414T093000" → "2026-04-14T09:30:00Z"
+  const s = str.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/, '$1-$2-$3T$4:$5:$6Z')
+  const ms = Date.parse(s)
+  if (Number.isNaN(ms)) throw new Error(`Unparseable Alpha Vantage date: ${str}`)
+  return ms
 }
 
 function mapSentiment(label: string): NewsItem['sentiment'] {
