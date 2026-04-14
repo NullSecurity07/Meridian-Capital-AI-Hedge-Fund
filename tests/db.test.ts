@@ -67,6 +67,7 @@ describe('trades', () => {
     const result = getTradeById(db, 'trade-2')
     expect(result?.closePrice).toBe(200.00)
     expect(result?.pAndL).toBe(54.00)
+    expect(result?.closedAt).toBe(closedAt)
   })
 })
 
@@ -152,17 +153,34 @@ describe('positions', () => {
     expect(positions[0].symbol).toBe('NVDA')
     expect(positions[0].unrealizedPAndL).toBe(26.00)
   })
+
+  it('excludes zero-quantity positions', () => {
+    upsertPosition(db, {
+      id: 'pos-zero',
+      symbol: 'META',
+      quantity: 0,
+      avgCost: 500.00,
+      currentPrice: 510.00,
+      unrealizedPAndL: 0,
+      mode: 'paper',
+      updatedAt: Date.now(),
+    })
+    const positions = getPositions(db, 'paper')
+    expect(positions.find(p => p.symbol === 'META')).toBeUndefined()
+  })
 })
 
 describe('safety events', () => {
   it('logs safety events', () => {
-    expect(() =>
-      logSafetyEvent(db, {
-        id: 'ev-1',
-        eventType: 'kill_switch',
-        details: 'Manual kill switch activated',
-        createdAt: Date.now(),
-      })
-    ).not.toThrow()
+    logSafetyEvent(db, {
+      id: 'ev-1',
+      eventType: 'kill_switch',
+      details: 'Manual kill switch activated',
+      createdAt: Date.now(),
+    })
+    const row = db.prepare('SELECT * FROM safety_events WHERE id = ?').get('ev-1') as Record<string, unknown> | undefined
+    expect(row).toBeDefined()
+    expect(row?.event_type).toBe('kill_switch')
+    expect(row?.details).toBe('Manual kill switch activated')
   })
 })

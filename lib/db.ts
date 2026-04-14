@@ -2,7 +2,7 @@
 import Database from 'better-sqlite3'
 import type {
   Trade, AgentReport, AgentMemoryEntry,
-  Portfolio, Position, AgentId, TradingMode, SafetyEvent
+  Portfolio, Position, AgentId, TradingMode, SafetyEvent, Agent
 } from '@/types'
 
 export function initDb(db: Database.Database): void {
@@ -147,18 +147,18 @@ export function insertAgentReport(db: Database.Database, report: AgentReport): v
   })
 }
 
-export function getLatestReportsBySymbol(db: Database.Database, symbol: string): AgentReport[] {
+export function getLatestReportsBySymbol(db: Database.Database, symbol: string, limit = 20): AgentReport[] {
   const rows = db.prepare(`
     SELECT * FROM agent_reports WHERE symbol = ?
-    ORDER BY created_at DESC LIMIT 20
-  `).all(symbol) as Record<string, unknown>[]
+    ORDER BY created_at DESC LIMIT ?
+  `).all(symbol, limit) as Record<string, unknown>[]
   return rows.map(r => ({
     id: r.id as string,
     agentId: r.agent_id as AgentId,
     symbol: r.symbol as string,
     reportType: r.report_type as AgentReport['reportType'],
     content: JSON.parse(r.content as string),
-    conviction: r.conviction as number | undefined,
+    conviction: r.conviction as import('@/types').ConvictionLevel | undefined,
     recommendation: r.recommendation as AgentReport['recommendation'],
     createdAt: r.created_at as number,
   }))
@@ -189,7 +189,7 @@ export function updateAgentAccuracy(db: Database.Database, agentId: AgentId, cor
   `).run(correct ? 1 : 0, correct ? 1 : 0, agentId)
 }
 
-export function getAgent(db: Database.Database, agentId: AgentId) {
+export function getAgent(db: Database.Database, agentId: AgentId): Agent | undefined {
   const row = db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId) as Record<string, unknown> | undefined
   if (!row) return undefined
   return {
