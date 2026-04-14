@@ -11,8 +11,9 @@ export function activateKillSwitch(reason: string): void {
   console.error(`[KILL SWITCH ACTIVATED] ${reason}`)
 }
 
-export function deactivateKillSwitch(): void {
+export function deactivateKillSwitch(reason = 'Manual deactivation'): void {
   killSwitchActive = false
+  console.info(`[KILL SWITCH DEACTIVATED] ${reason}`)
 }
 
 export function checkPositionLimit(
@@ -20,11 +21,14 @@ export function checkPositionLimit(
   totalPortfolioValue: number,
   config: SafetyConfig
 ): { allowed: boolean; reason?: string } {
+  if (!isFinite(proposedTradeValue) || !isFinite(totalPortfolioValue) || totalPortfolioValue <= 0) {
+    return { allowed: false, reason: 'Invalid input: values must be finite positive numbers' }
+  }
   const maxAllowed = totalPortfolioValue * config.maxPositionPct
   if (proposedTradeValue > maxAllowed) {
     return {
       allowed: false,
-      reason: `Position value $${proposedTradeValue.toFixed(2)} exceeds max 15% of portfolio ($${maxAllowed.toFixed(2)})`,
+      reason: `Position value $${proposedTradeValue.toFixed(2)} exceeds max ${(config.maxPositionPct * 100).toFixed(0)}% of portfolio ($${maxAllowed.toFixed(2)})`,
     }
   }
   return { allowed: true }
@@ -35,12 +39,12 @@ export function checkDailyLossLimit(
   currentValue: number,
   config: SafetyConfig
 ): { triggered: boolean; reason?: string } {
+  if (startOfDayValue <= 0) return { triggered: false }
   const lossPct = (startOfDayValue - currentValue) / startOfDayValue
   if (lossPct >= config.dailyLossLimitPct) {
-    return {
-      triggered: true,
-      reason: `Daily loss of ${(lossPct * 100).toFixed(1)}% exceeds 5% limit. Kill switch required.`,
-    }
+    const reason = `Daily loss of ${(lossPct * 100).toFixed(1)}% exceeds ${(config.dailyLossLimitPct * 100).toFixed(0)}% limit. Kill switch activated.`
+    activateKillSwitch(reason)
+    return { triggered: true, reason }
   }
   return { triggered: false }
 }
@@ -49,6 +53,9 @@ export function checkBudgetLimit(
   proposedTradeValue: number,
   availableCash: number
 ): { allowed: boolean; reason?: string } {
+  if (!isFinite(proposedTradeValue) || !isFinite(availableCash) || availableCash < 0) {
+    return { allowed: false, reason: 'Invalid input: values must be finite non-negative numbers' }
+  }
   if (proposedTradeValue > availableCash) {
     return {
       allowed: false,
