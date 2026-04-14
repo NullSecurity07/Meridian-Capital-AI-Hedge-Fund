@@ -12,6 +12,8 @@ export type Recommendation = 'BUY' | 'SELL' | 'PASS' | 'HOLD'
 
 export type AgentStatus = 'active' | 'thinking' | 'idle'
 
+export type ConvictionLevel = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10
+
 export interface Agent {
   id: AgentId
   name: string
@@ -43,8 +45,8 @@ export interface AgentReport {
   agentId: AgentId
   symbol: string
   reportType: 'research' | 'quant' | 'risk' | 'macro' | 'pm_decision'
-  content: Record<string, unknown>
-  conviction?: number // 1–10
+  content: Record<string, unknown> // TODO Plan 2: narrow to discriminated union per reportType
+  conviction?: ConvictionLevel
   recommendation?: Recommendation
   createdAt: number
 }
@@ -128,6 +130,15 @@ export interface NewsItem {
 export interface SSEEvent {
   type: 'agent_update' | 'trade_executed' | 'meeting_started' | 'decision_made' | 'kill_switch' | 'portfolio_update'
   agentId?: AgentId
-  payload: Record<string, unknown>
+  payload: Record<string, unknown> // TODO Plan 2: narrow to discriminated union per event type
   timestamp: number
+}
+
+export type SafetyEventType = 'kill_switch' | 'daily_loss_limit' | 'position_limit' | 'stop_loss'
+
+export interface SafetyEvent {
+  id: string
+  eventType: SafetyEventType
+  details: string
+  createdAt: number
 }
