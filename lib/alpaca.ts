@@ -1,21 +1,23 @@
 import Alpaca from '@alpacahq/alpaca-trade-api'
-import type { Position, TradingMode } from '@/types'
+import type { Position } from '@/types'
 
 type AlpacaClient = InstanceType<typeof Alpaca>
 
 export function createAlpacaClient(mode: 'paper' | 'live'): AlpacaClient {
   if (mode === 'paper') {
-    return new Alpaca({
-      keyId: process.env.ALPACA_PAPER_KEY!,
-      secretKey: process.env.ALPACA_PAPER_SECRET!,
-      paper: true,
-    })
+    const keyId = process.env.ALPACA_PAPER_KEY
+    const secretKey = process.env.ALPACA_PAPER_SECRET
+    if (!keyId || !secretKey) {
+      throw new Error('ALPACA_PAPER_KEY and ALPACA_PAPER_SECRET must be set in environment')
+    }
+    return new Alpaca({ keyId, secretKey, paper: true })
   }
-  return new Alpaca({
-    keyId: process.env.ALPACA_LIVE_KEY!,
-    secretKey: process.env.ALPACA_LIVE_SECRET!,
-    paper: false,
-  })
+  const keyId = process.env.ALPACA_LIVE_KEY
+  const secretKey = process.env.ALPACA_LIVE_SECRET
+  if (!keyId || !secretKey) {
+    throw new Error('ALPACA_LIVE_KEY and ALPACA_LIVE_SECRET must be set in environment')
+  }
+  return new Alpaca({ keyId, secretKey, paper: false })
 }
 
 export async function submitOrder(
@@ -41,7 +43,7 @@ export async function submitOrder(
   }
 }
 
-export async function getPositions(client: AlpacaClient, mode: TradingMode): Promise<Position[]> {
+export async function getPositions(client: AlpacaClient, mode: 'paper' | 'live'): Promise<Position[]> {
   const raw = await client.getPositions()
   const now = Date.now()
   return raw.map((p: Record<string, string>) => ({
