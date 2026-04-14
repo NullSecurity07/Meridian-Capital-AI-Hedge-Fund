@@ -2,6 +2,10 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { AgentId } from '@/types'
 
+if (!process.env.ANTHROPIC_API_KEY) {
+  throw new Error('ANTHROPIC_API_KEY must be set in environment')
+}
+
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export interface AgentConfig {
@@ -9,6 +13,7 @@ export interface AgentConfig {
   name: string
   role: string
   systemPrompt: string
+  maxTokens?: number
 }
 
 export interface AgentMessage {
@@ -39,16 +44,19 @@ export async function runAgent(
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
+    max_tokens: config.maxTokens ?? 1024,
     system: systemPrompt,
     messages: messages.map(m => ({ role: m.role, content: m.content })),
   })
 
   const textBlock = response.content.find(b => b.type === 'text')
-  const content = textBlock?.type === 'text' ? textBlock.text : ''
+  if (!textBlock || textBlock.type !== 'text') {
+    console.warn(`[${config.id}] runAgent: no text block in response — returning empty content`)
+    return { content: '', usage: { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens } }
+  }
 
   return {
-    content,
+    content: textBlock.text,
     usage: {
       inputTokens: response.usage.input_tokens,
       outputTokens: response.usage.output_tokens,
