@@ -37,6 +37,11 @@ describe('checkPositionLimit', () => {
     const result = checkPositionLimit(3750, 25000, config)
     expect(result.allowed).toBe(true)
   })
+
+  it('blocks NaN trade value in position limit', () => {
+    const result = checkPositionLimit(NaN, 25000, config)
+    expect(result.allowed).toBe(false)
+  })
 })
 
 describe('checkDailyLossLimit', () => {
@@ -49,6 +54,7 @@ describe('checkDailyLossLimit', () => {
     const result = checkDailyLossLimit(25000, 23750, config)
     expect(result.triggered).toBe(true)
     expect(result.reason).toMatch(/5%/)
+    expect(isKillSwitchActive()).toBe(true) // auto-activated
   })
 
   it('triggers when loss exceeds 5%', () => {
@@ -72,6 +78,11 @@ describe('checkBudgetLimit', () => {
     const result = checkBudgetLimit(6000, 5000)
     expect(result.allowed).toBe(false)
     expect(result.reason).toMatch(/cash/)
+  })
+
+  it('allows trade exactly equal to cash', () => {
+    const result = checkBudgetLimit(5000, 5000)
+    expect(result.allowed).toBe(true)
   })
 })
 
