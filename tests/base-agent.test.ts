@@ -4,18 +4,20 @@ import {
   runAgent,
 } from '@/lib/agents/base-agent'
 
-vi.mock('@anthropic-ai/sdk', () => {
-  const MockAnthropic = vi.fn(function() {
+vi.mock('openai', () => {
+  const MockOpenAI = vi.fn(function() {
     return {
-      messages: {
-        create: vi.fn().mockResolvedValue({
-          content: [{ type: 'text', text: 'NVDA looks strong. BUY recommendation with conviction 8/10.' }],
-          usage: { input_tokens: 120, output_tokens: 45 },
-        }),
+      chat: {
+        completions: {
+          create: vi.fn().mockResolvedValue({
+            choices: [{ message: { content: 'NVDA looks strong. BUY recommendation with conviction 8/10.' } }],
+            usage: { prompt_tokens: 120, completion_tokens: 45 },
+          }),
+        },
       },
     }
   })
-  return { default: MockAnthropic, Anthropic: MockAnthropic }
+  return { default: MockOpenAI, OpenAI: MockOpenAI }
 })
 
 describe('buildSystemPromptWithMemory', () => {
@@ -36,8 +38,7 @@ describe('buildSystemPromptWithMemory', () => {
 })
 
 describe('runAgent', () => {
-  it('calls Claude and returns a response', async () => {
-    process.env.ANTHROPIC_API_KEY = 'test-key'
+  it('calls the LLM and returns a response', async () => {
     const config = {
       id: 'researcher' as const,
       name: 'Alex',
@@ -55,7 +56,6 @@ describe('runAgent', () => {
   })
 
   it('injects lessons into the system prompt when provided', async () => {
-    process.env.ANTHROPIC_API_KEY = 'test-key'
     const config = {
       id: 'quant' as const,
       name: 'Sam',
