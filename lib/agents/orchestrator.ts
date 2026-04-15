@@ -96,45 +96,56 @@ export function startOrchestrator(db: Database.Database, config: OrchestratorCon
   const runCycle = async () => {
     if (!isRunning) return
 
-    // 1. Enforce stop losses on all open positions first
-    await enforceStopLosses(db, config.mode, config.safetyConfig)
+    // Outer try/catch: any unhandled error here would silently kill the interval.
+    // By catching at this level the interval keeps firing even if something
+    // unexpected happens (network down, DB locked, Yahoo Finance timeout, etc.)
+    try {
+      // 1. Enforce stop losses on all open positions first
+      await enforceStopLosses(db, config.mode, config.safetyConfig)
 
-    // 2. Daily loss check — auto-activates kill switch if breached
-    const portfolio = getPortfolio(db, config.mode)
-    const currentValue = portfolio?.totalValue ?? config.safetyConfig.budget
-    const baseline = getOrSetDailyBaseline(currentValue)
-    const lossCheck = checkDailyLossLimit(baseline, currentValue, config.safetyConfig)
-    if (lossCheck.triggered) {
+      // 2. Daily loss check — auto-activates kill switch if breached
+      const portfolio = getPortfolio(db, config.mode)
+      const currentValue = portfolio?.totalValue ?? config.safetyConfig.budget
+      const baseline = getOrSetDailyBaseline(currentValue)
+      const lossCheck = checkDailyLossLimit(baseline, currentValue, config.safetyConfig)
+      if (lossCheck.triggered) {
+        broadcast({
+          type: 'safety_event',
+          payload: { eventType: 'daily_loss_limit', message: lossCheck.reason },
+          timestamp: Date.now(),
+        })
+        broadcast({ type: 'agent_update', payload: { status: 'error', task: `🛑 ${lossCheck.reason}` }, timestamp: Date.now() })
+        return // kill switch now active; interval keeps firing but trades are blocked
+      }
+
+      if (isKillSwitchActive()) {
+        broadcast({ type: 'agent_update', payload: { status: 'idle', task: '🔴 Kill switch active — deactivate on dashboard to resume' }, timestamp: Date.now() })
+        return
+      }
+
+      // 3. Refresh benchmark prices (fire-and-forget)
+      refreshBenchmarks(db).catch(err => console.warn('[Orchestrator] Benchmark refresh failed:', err))
+
+      // 4. Normal analysis cycle
+      const symbol = config.watchlist[index % config.watchlist.length]
+      index++
       broadcast({
-        type: 'safety_event',
-        payload: { eventType: 'daily_loss_limit', message: lossCheck.reason },
+        type: 'cycle_started' as 'agent_update',
+        payload: { symbol, watchlistIndex: (index - 1) % config.watchlist.length, totalSymbols: config.watchlist.length, status: 'active', task: `Starting cycle: ${symbol}` },
         timestamp: Date.now(),
       })
-      broadcast({ type: 'agent_update', payload: { status: 'error', task: `🛑 ${lossCheck.reason}` }, timestamp: Date.now() })
-      return // kill switch is now active; trader.ts will block any further trades
-    }
+      try {
+        await analyzeSymbol(symbol, db, config.mode, config.safetyConfig)
+      } catch (err) {
+        console.error(`[Orchestrator] Analysis failed for ${symbol}:`, err)
+        broadcast({ type: 'agent_update', payload: { status: 'error', task: `Analysis failed: ${String(err).slice(0, 80)}` }, timestamp: Date.now() })
+        // Continue — next interval tick will move to the next symbol
+      }
 
-    if (isKillSwitchActive()) {
-      broadcast({ type: 'agent_update', payload: { status: 'idle', task: 'Kill switch active — trading halted' }, timestamp: Date.now() })
-      return
-    }
-
-    // 3. Refresh benchmark prices (fire-and-forget — don't block the cycle)
-    refreshBenchmarks(db).catch(err => console.warn('[Orchestrator] Benchmark refresh failed:', err))
-
-    // 4. Normal analysis cycle
-    const symbol = config.watchlist[index % config.watchlist.length]
-    index++
-    broadcast({
-      type: 'cycle_started' as 'agent_update',
-      payload: { symbol, watchlistIndex: (index - 1) % config.watchlist.length, totalSymbols: config.watchlist.length, status: 'active', task: `Starting cycle: ${symbol}` },
-      timestamp: Date.now(),
-    })
-    try {
-      await analyzeSymbol(symbol, db, config.mode, config.safetyConfig)
     } catch (err) {
-      console.error(`[Orchestrator] Error on ${symbol}:`, err)
-      broadcast({ type: 'agent_update', payload: { status: 'error', symbol, error: String(err) }, timestamp: Date.now() })
+      // Safety net: log and continue. The interval must not die.
+      console.error('[Orchestrator] Unexpected cycle error (interval preserved):', err)
+      broadcast({ type: 'agent_update', payload: { status: 'error', task: `Cycle error — retrying next interval` }, timestamp: Date.now() })
     }
   }
 

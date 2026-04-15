@@ -467,15 +467,18 @@ export default function OfficeSimulation({
         drawChar(ctx, char, char.id, ag.status, ag.task, ag.lastRec)
       })
 
-      // Overlay: idle message when not running
+      // Overlay: shown briefly while the auto-start is warming up
       if (!orchestratorRunning) {
-        ctx.fillStyle = '#00000066'
-        ctx.fillRect(0, CH / 2 - 16, CW, 32)
-        ctx.fillStyle = '#6b7280'
+        ctx.fillStyle = '#00000055'
+        ctx.fillRect(0, CH / 2 - 18, CW, 36)
+        ctx.fillStyle = '#4b5563'
         ctx.font = '8px "Courier New"'
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        ctx.fillText('▶  CLICK START TO BEGIN', CW / 2, CH / 2)
+        ctx.fillText('INITIALISING — AUTO-STARTING…', CW / 2, CH / 2 - 5)
+        ctx.font = '6px "Courier New"'
+        ctx.fillStyle = '#374151'
+        ctx.fillText('orchestrator starts automatically on boot', CW / 2, CH / 2 + 8)
       }
 
       rafRef.current = requestAnimationFrame(loop)
