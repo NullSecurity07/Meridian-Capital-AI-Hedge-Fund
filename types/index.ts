@@ -97,6 +97,7 @@ export interface Quote {
   volume: number
   marketCap?: number
   pe?: number
+  earningsTimestamp?: number  // Unix ms of next earnings date (from Yahoo Finance)
   timestamp: number
 }
 

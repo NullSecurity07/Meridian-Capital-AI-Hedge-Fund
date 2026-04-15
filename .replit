@@ -1,0 +1,14 @@
+run = "npm run replit:start"
+entrypoint = "app/page.tsx"
+
+[nix]
+channel = "stable-24_05"
+
+# Map Replit's internal port 3000 → public port 80
+[[ports]]
+localPort = 3000
+externalPort = 80
+
+[deployment]
+run = ["sh", "-c", "npm run replit:start"]
+deploymentTarget = "cloudrun"

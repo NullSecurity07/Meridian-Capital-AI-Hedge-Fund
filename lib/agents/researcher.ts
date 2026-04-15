@@ -33,11 +33,20 @@ export async function generateResearchReport(
 
   const lessons = getAgentMemoryLessons(db, 'researcher', 5)
 
+  // Earnings binary event warning — reduce sizing if earnings within 7 days
+  const earningsWarning = (() => {
+    if (!quote.earningsTimestamp) return ''
+    const daysUntil = Math.floor((quote.earningsTimestamp - Date.now()) / (1000 * 60 * 60 * 24))
+    if (daysUntil >= 0 && daysUntil <= 7)
+      return `\n⚠️ EARNINGS IN ${daysUntil} DAY(S) — Binary event risk. Set conviction ≤ 6 and recommend 50% smaller position size.`
+    return ''
+  })()
+
   const context = `Symbol: ${symbol}
 Current Price: $${quote.price.toFixed(2)} (${quote.changePct >= 0 ? '+' : ''}${quote.changePct.toFixed(2)}%)
 Volume: ${(quote.volume / 1_000_000).toFixed(1)}M
 P/E Ratio: ${quote.pe?.toFixed(1) ?? 'N/A'}
-Market Cap: $${quote.marketCap ? (quote.marketCap / 1_000_000_000).toFixed(1) + 'B' : 'N/A'}
+Market Cap: $${quote.marketCap ? (quote.marketCap / 1_000_000_000).toFixed(1) + 'B' : 'N/A'}${earningsWarning}
 
 Recent News (${news.length} articles):
 ${news.slice(0, 5).map(n => `- [${(n.sentiment ?? 'neutral').toUpperCase()}] ${n.title}`).join('\n') || '(none available)'}`
