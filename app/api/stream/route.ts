@@ -1,8 +1,25 @@
 // app/api/stream/route.ts
 import { subscribe, unsubscribe } from '@/lib/sse'
-import type { SSEEvent } from '@/types'
+import { isOrchestratorRunning, startOrchestrator } from '@/lib/agents/orchestrator'
+import { DEFAULT_OPTIONS } from '@/lib/orchestrator-singleton'
+import { getDb } from '@/lib/db-singleton'
+import type { SSEEvent, TradingMode } from '@/types'
 
 export const dynamic = 'force-dynamic'
+
+// Fallback: if instrumentation.ts didn't fire (Replit cold-start edge case),
+// kick off the orchestrator the first time a client connects to the stream.
+function ensureOrchestratorRunning() {
+  if (!isOrchestratorRunning()) {
+    try {
+      const mode = (process.env.TRADING_MODE ?? 'paper') as TradingMode
+      startOrchestrator(getDb(), { ...DEFAULT_OPTIONS, mode })
+      console.info('[Stream] Fallback auto-start: orchestrator launched on first SSE connection')
+    } catch (err) {
+      console.error('[Stream] Fallback auto-start failed:', err)
+    }
+  }
+}
 
 export async function GET() {
   const encoder = new TextEncoder()
@@ -10,6 +27,9 @@ export async function GET() {
 
   const stream = new ReadableStream({
     start(controller) {
+      // Ensure orchestrator is running (primary: instrumentation.ts, fallback: here)
+      ensureOrchestratorRunning()
+
       // Send a heartbeat immediately to confirm connection
       controller.enqueue(encoder.encode('data: {"type":"connected"}\n\n'))
 
