@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
+import OfficeSimulation from './components/OfficeSimulation'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -274,7 +275,7 @@ function AgentDesk({ agent }: { agent: AgentState }) {
 function ConferenceRoom({ pm, meeting }: { pm: AgentState; meeting: Meeting }) {
   const isActive = meeting.active
   const hasDec = !!meeting.decision
-  const borderColor = isActive ? C.blue : hasDec ? `${recColor(meeting.decision)}44` : C.border
+  const borderColor = isActive ? C.blue : hasDec ? `${recColor(meeting.decision ?? undefined)}44` : C.border
 
   const VOTE_AGENTS = ['researcher', 'quant', 'macro', 'risk']
 
@@ -930,12 +931,27 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ── Main 3-column grid ───────────────────────────────────────────── */}
+        {/* ── Pixel art office simulation ──────────────────────────────────── */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ color: C.dim, fontSize: 10, letterSpacing: 2, marginBottom: 8 }}>
+            ◆ TRADING FLOOR — LIVE SIMULATION
+            <span style={{ color: C.border, marginLeft: 12 }}>
+              Alex · Sam · Jordan · Drew · Riley walk to conference room when meeting starts · Morgan stays at his desk
+            </span>
+          </div>
+          <OfficeSimulation
+            agents={agents.map(a => ({ id: a.id, status: a.status, task: a.task, lastRec: a.lastRec }))}
+            meeting={{ active: meeting.active, symbol: meeting.symbol, decision: meeting.decision }}
+            orchestratorRunning={orchestratorRunning}
+          />
+        </div>
+
+        {/* ── Main 3-column data grid ──────────────────────────────────────── */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px 280px', gap: 12, marginBottom: 12 }}>
 
-          {/* Left: Trading Floor */}
+          {/* Left: Agent status cards */}
           <div>
-            <div style={{ color: C.dim, fontSize: 10, letterSpacing: 2, marginBottom: 8 }}>◆ TRADING FLOOR — 5 ANALYSTS</div>
+            <div style={{ color: C.dim, fontSize: 10, letterSpacing: 2, marginBottom: 8 }}>◆ AGENT STATUS</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               {floorAgents.map(a => <AgentDesk key={a.id} agent={a} />)}
             </div>
