@@ -859,7 +859,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <style>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         * { box-sizing: border-box }
         body { background: ${C.bg}; margin: 0; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace }
         @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.35 } }
@@ -867,7 +867,7 @@ export default function Dashboard() {
         ::-webkit-scrollbar-track { background: #040810 }
         ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 3px }
         button:hover { filter: brightness(1.2) }
-      `}</style>
+      ` }} />
 
       <div style={{ maxWidth: 1360, margin: '0 auto', padding: '0 16px 32px' }}>
 
