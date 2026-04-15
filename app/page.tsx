@@ -1,19 +1,25 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-// ─── Types ────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type AgentStatus = 'idle' | 'thinking' | 'active' | 'error'
 
 interface AgentState {
   id: string; name: string; emoji: string; role: string
   status: AgentStatus; task: string; accuracyScore: number
+  lastRec?: string; lastConviction?: number; lastSymbol?: string; lastVeto?: boolean
+}
+
+interface TeamVote {
+  agentId: string; recommendation: string; conviction: number; veto?: boolean
 }
 
 interface Meeting {
-  active: boolean; symbol: string | null
-  decision: string | null; reasoning: string | null
-  agents: string[]
+  active: boolean; symbol: string | null; decision: string | null
+  reasoning: string | null; confidence?: number
+  positionSizeUsd?: number; targetPrice?: number; stopLoss?: number
+  teamVotes: Record<string, TeamVote>
 }
 
 interface Position {
@@ -34,14 +40,12 @@ interface SafetyState {
 
 interface BenchmarkEntry {
   symbol: string; name: string
-  returnSinceBaseline: number; changePct: number
-  currentPrice: number
+  returnSinceBaseline: number; changePct: number; currentPrice: number
 }
 
 interface BenchmarkData {
   portfolio: { name: string; returnSinceBaseline: number; currentValue: number; budget: number }
-  benchmarks: BenchmarkEntry[]
-  lastUpdated: number | null
+  benchmarks: BenchmarkEntry[]; lastUpdated: number | null
 }
 
 interface FeedItem {
@@ -49,225 +53,484 @@ interface FeedItem {
   msg: string; color: string
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────
-
-const AGENT_META: Record<string, { name: string; emoji: string; role: string }> = {
-  researcher: { name: 'Alex',   emoji: '🧑‍💻', role: 'Research Analyst' },
-  quant:      { name: 'Sam',    emoji: '📊',  role: 'Quant Analyst'    },
-  risk:       { name: 'Drew',   emoji: '⚠️',  role: 'Risk Manager'     },
-  macro:      { name: 'Jordan', emoji: '🌍',  role: 'Macro Strategist' },
-  trader:     { name: 'Riley',  emoji: '💹',  role: 'Trader'           },
-  pm:         { name: 'Morgan', emoji: '🧠',  role: 'Portfolio Manager' },
+interface CycleInfo {
+  symbol: string; watchlistIndex: number; totalSymbols: number
 }
 
-const FLOOR_AGENTS = ['researcher', 'quant', 'risk', 'macro', 'trader']
+interface RecentTrade {
+  id: string; action: string; symbol: string; qty: number; price: number; ts: string
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const AGENT_META: Record<string, { name: string; emoji: string; role: string; description: string }> = {
+  researcher: { name: 'Alex',   emoji: '🧑‍💻', role: 'Research Analyst',   description: 'Reads news, earnings dates, fundamentals. Sets conviction 1–10. Low conviction skips the entire pipeline.' },
+  quant:      { name: 'Sam',    emoji: '📊',  role: 'Quant Analyst',       description: 'Computes RSI(14) on 90 days of OHLCV data. Finds support/resistance levels and trend direction.' },
+  risk:       { name: 'Drew',   emoji: '⚠️',  role: 'Risk Manager',        description: 'Checks position size vs portfolio limits. Can issue a veto — which the PM cannot override.' },
+  macro:      { name: 'Jordan', emoji: '🌍',  role: 'Macro Strategist',    description: 'Reads broad market (SPY) news. Classifies market cycle and whether macro conditions support the trade.' },
+  pm:         { name: 'Morgan', emoji: '🧠',  role: 'Portfolio Manager',   description: 'Reads all four reports and makes the final BUY / SELL / HOLD / PASS call. Also decides position size.' },
+  trader:     { name: 'Riley',  emoji: '💹',  role: 'Trader',              description: 'Submits market orders via Alpaca. Enforces 24h min hold time. Writes a lesson to memory after every closed position.' },
+}
+
+const PIPELINE_ORDER = ['researcher', 'quant', 'macro', 'risk', 'pm', 'trader']
+const FLOOR_AGENTS   = ['researcher', 'quant', 'risk', 'macro', 'trader']
 
 const DEFAULT_AGENTS: AgentState[] = Object.entries(AGENT_META).map(([id, m]) => ({
-  id, ...m, status: 'idle', task: 'Standing by...', accuracyScore: 0.5,
+  id, name: m.name, emoji: m.emoji, role: m.role,
+  status: 'idle', task: 'Standing by...', accuracyScore: 0.5,
 }))
 
-const DEFAULT_PORTFOLIO: PortfolioState = {
-  totalValue: 0, cash: 0, budget: 10000, positions: [], mode: 'paper',
-}
+const DEFAULT_PORTFOLIO: PortfolioState = { totalValue: 0, cash: 0, budget: 10000, positions: [], mode: 'paper' }
+const DEFAULT_SAFETY: SafetyState = { killSwitchActive: false, dailyLossPct: 0, dailyLossLimitPct: 0.05, maxPositionPct: 0.15, stopLossPct: 0.08, budget: 10000 }
 
-const DEFAULT_SAFETY: SafetyState = {
-  killSwitchActive: false, dailyLossPct: 0, dailyLossLimitPct: 0.05,
-  maxPositionPct: 0.15, stopLossPct: 0.08, budget: 10000,
-}
+// ─── Colour helpers ───────────────────────────────────────────────────────────
 
-// ─── Colour helpers ───────────────────────────────────────────────────────
+const C = {
+  bg:      '#080d14',
+  panel:   '#0d1520',
+  card:    '#111827',
+  border:  '#1f2937',
+  dim:     '#374151',
+  muted:   '#6b7280',
+  text:    '#9ca3af',
+  bright:  '#f9fafb',
+  green:   '#22c55e',
+  red:     '#ef4444',
+  yellow:  '#eab308',
+  blue:    '#3b82f6',
+  purple:  '#a855f7',
+}
 
 const STATUS_COLOR: Record<AgentStatus, string> = {
-  idle: '#4b5563', thinking: '#eab308', active: '#22c55e', error: '#ef4444',
+  idle: C.dim, thinking: C.yellow, active: C.green, error: C.red,
 }
 
-const STATUS_GLOW: Record<AgentStatus, string> = {
-  idle: 'none',
-  thinking: '0 0 12px rgba(234,179,8,0.5)',
-  active:   '0 0 12px rgba(34,197,94,0.5)',
-  error:    '0 0 12px rgba(239,68,68,0.5)',
+function recColor(r?: string) {
+  if (r === 'BUY')  return C.green
+  if (r === 'SELL') return C.red
+  if (r === 'HOLD') return C.blue
+  return C.muted
 }
 
-function decisionColor(d: string | null) {
-  if (d === 'BUY')  return '#22c55e'
-  if (d === 'SELL') return '#ef4444'
-  if (d === 'HOLD') return '#3b82f6'
-  return '#6b7280'
-}
-
-function pnlColor(v: number) { return v >= 0 ? '#22c55e' : '#ef4444' }
+function pnlColor(v: number) { return v >= 0 ? C.green : C.red }
 function fmt$(v: number) { return `$${Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` }
 function fmtPct(v: number) { return `${(v * 100).toFixed(2)}%` }
-function now() { return new Date().toLocaleTimeString('en-US', { hour12: false }) }
+function fmtPctSigned(v: number) { return `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%` }
+function nowStr() { return new Date().toLocaleTimeString('en-US', { hour12: false }) }
 
-// ─── Sub-components ───────────────────────────────────────────────────────
+// ─── Pipeline Flow ────────────────────────────────────────────────────────────
 
-function Dot({ color, pulse }: { color: string; pulse?: boolean }) {
-  return (
-    <span style={{
-      display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
-      background: color, marginRight: 6,
-      animation: pulse ? 'pulse 1.2s ease-in-out infinite' : undefined,
-    }} />
+function PipelineFlow({ agents, cycleInfo }: { agents: AgentState[]; cycleInfo: CycleInfo | null }) {
+  const activeStep = PIPELINE_ORDER.findIndex(id => agents.find(a => a.id === id)?.status === 'thinking')
+  const completedSteps = new Set(
+    PIPELINE_ORDER.slice(0, activeStep === -1 ? 0 : activeStep).map((_, i) => i)
   )
-}
 
-function AgentDesk({ agent }: { agent: AgentState }) {
-  const color = STATUS_COLOR[agent.status]
-  const glow = STATUS_GLOW[agent.status]
   return (
-    <div style={{
-      background: '#111827', border: `1px solid ${color}33`,
-      borderRadius: 8, padding: '12px 14px',
-      boxShadow: glow, transition: 'box-shadow 0.3s, border-color 0.3s',
-      minHeight: 90,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <span style={{ fontSize: 18 }}>{agent.emoji}</span>
-        <div>
-          <div style={{ color: '#f9fafb', fontSize: 13, fontWeight: 'bold' }}>{agent.name}</div>
-          <div style={{ color: '#6b7280', fontSize: 10 }}>{agent.role}</div>
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
-          <Dot color={color} pulse={agent.status === 'thinking'} />
-          <span style={{ color, fontSize: 10, textTransform: 'uppercase' }}>{agent.status}</span>
-        </div>
+    <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px', marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+        <div style={{ width: 7, height: 7, borderRadius: '50%', background: C.green, boxShadow: `0 0 6px ${C.green}`, animation: 'pulse 1.2s ease-in-out infinite' }} />
+        <span style={{ color: C.text, fontSize: 11 }}>
+          {cycleInfo
+            ? `Analyzing ${cycleInfo.symbol} · Symbol ${cycleInfo.watchlistIndex + 1} of ${cycleInfo.totalSymbols}`
+            : 'Analysis pipeline'}
+        </span>
+        {cycleInfo && (
+          <span style={{ marginLeft: 'auto', color: C.muted, fontSize: 10 }}>
+            32-symbol watchlist · cycles every 15 min
+          </span>
+        )}
       </div>
-      <div style={{ color: '#9ca3af', fontSize: 11, lineHeight: 1.4, minHeight: 28, wordBreak: 'break-word' }}>
-        {agent.task}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+        {PIPELINE_ORDER.map((id, i) => {
+          const meta = AGENT_META[id]
+          const agent = agents.find(a => a.id === id)
+          const isActive = agent?.status === 'thinking'
+          const isDone = completedSteps.has(i)
+          const color = isActive ? C.yellow : isDone ? C.green : C.dim
+
+          return (
+            <div key={id} style={{ display: 'flex', alignItems: 'center', flex: i < PIPELINE_ORDER.length - 1 ? 1 : undefined }}>
+              <div style={{
+                background: isActive ? '#1a1500' : isDone ? '#0a1a0a' : C.card,
+                border: `1px solid ${color}44`,
+                borderRadius: 8, padding: '6px 10px',
+                boxShadow: isActive ? `0 0 10px ${C.yellow}33` : isDone ? `0 0 6px ${C.green}22` : 'none',
+                transition: 'all 0.3s', whiteSpace: 'nowrap',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ fontSize: 13 }}>{meta.emoji}</span>
+                  <div>
+                    <div style={{ color: isActive ? C.yellow : isDone ? C.green : C.muted, fontSize: 11, fontWeight: isActive ? 'bold' : 'normal' }}>
+                      {meta.name}
+                    </div>
+                    <div style={{ color: C.dim, fontSize: 9 }}>{meta.role.split(' ')[0]}</div>
+                  </div>
+                  {isDone && agent?.lastRec && (
+                    <span style={{ marginLeft: 4, fontSize: 9, padding: '1px 5px', borderRadius: 3, background: `${recColor(agent.lastRec)}22`, color: recColor(agent.lastRec), fontWeight: 'bold' }}>
+                      {agent.lastRec}
+                    </span>
+                  )}
+                  {isActive && <span style={{ color: C.yellow, fontSize: 9, animation: 'pulse 1s infinite' }}>●</span>}
+                </div>
+              </div>
+              {i < PIPELINE_ORDER.length - 1 && (
+                <div style={{ flex: 1, height: 1, background: isDone ? `${C.green}44` : C.border, margin: '0 2px', position: 'relative' }}>
+                  {isDone && <div style={{ position: 'absolute', right: -4, top: -4, color: C.green, fontSize: 9 }}>›</div>}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
 }
 
-function ConferenceRoom({ pm, meeting }: { pm: AgentState; meeting: Meeting }) {
-  const glow = meeting.active
-    ? '0 0 20px rgba(59,130,246,0.4)'
-    : meeting.decision ? '0 0 12px rgba(34,197,94,0.2)' : 'none'
-  const borderColor = meeting.active ? '#3b82f6' : '#1f2937'
+// ─── Agent Desk ───────────────────────────────────────────────────────────────
+
+function AgentDesk({ agent }: { agent: AgentState }) {
+  const color = STATUS_COLOR[agent.status]
+  const meta = AGENT_META[agent.id]
+  const convictionPct = ((agent.lastConviction ?? 0) / 10) * 100
 
   return (
     <div style={{
-      background: '#0d1520', border: `1px solid ${borderColor}`,
-      borderRadius: 10, padding: 16, boxShadow: glow,
-      transition: 'all 0.4s',
+      background: C.card, border: `1px solid ${color}33`,
+      borderRadius: 8, padding: '12px 14px',
+      boxShadow: agent.status === 'thinking' ? `0 0 14px ${C.yellow}33` : agent.status === 'active' ? `0 0 8px ${C.green}22` : 'none',
+      transition: 'all 0.3s',
     }}>
-      <div style={{ color: '#6b7280', fontSize: 10, letterSpacing: 2, marginBottom: 12 }}>
-        ◆ CONFERENCE ROOM
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 20, lineHeight: 1 }}>{agent.emoji}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: C.bright, fontSize: 13, fontWeight: 'bold' }}>{agent.name}</span>
+            {/* Status badge */}
+            <span style={{
+              fontSize: 9, padding: '1px 6px', borderRadius: 3, textTransform: 'uppercase', letterSpacing: 0.5,
+              background: `${color}22`, color,
+              animation: agent.status === 'thinking' ? 'pulse 1.2s infinite' : undefined,
+            }}>{agent.status}</span>
+          </div>
+          <div style={{ color: C.muted, fontSize: 10, marginTop: 1 }}>{agent.role}</div>
+        </div>
+        {/* Accuracy */}
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <div style={{ color: C.muted, fontSize: 9 }}>ACCURACY</div>
+          <div style={{ color: agent.accuracyScore >= 0.6 ? C.green : agent.accuracyScore >= 0.4 ? C.yellow : C.red, fontSize: 12, fontWeight: 'bold' }}>
+            {(agent.accuracyScore * 100).toFixed(0)}%
+          </div>
+        </div>
       </div>
 
-      {/* Morgan */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: '10px 12px', background: '#111827', borderRadius: 8, border: '1px solid #1f2937' }}>
-        <span style={{ fontSize: 24 }}>🧠</span>
+      {/* Current task */}
+      <div style={{ color: C.text, fontSize: 11, lineHeight: 1.4, minHeight: 28, wordBreak: 'break-word', marginBottom: 8 }}>
+        {agent.task}
+      </div>
+
+      {/* Last recommendation */}
+      {agent.lastRec && agent.lastSymbol && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <span style={{ color: C.dim, fontSize: 9 }}>LAST:</span>
+          <span style={{ color: C.muted, fontSize: 9 }}>{agent.lastSymbol}</span>
+          <span style={{
+            fontSize: 10, padding: '1px 7px', borderRadius: 3, fontWeight: 'bold',
+            background: `${recColor(agent.lastRec)}22`, color: recColor(agent.lastRec),
+          }}>{agent.lastRec}</span>
+          {agent.lastVeto && (
+            <span style={{ fontSize: 9, color: C.red, background: '#7f1d1d55', padding: '1px 5px', borderRadius: 3 }}>VETO</span>
+          )}
+        </div>
+      )}
+
+      {/* Conviction bar */}
+      {(agent.lastConviction ?? 0) > 0 && (
         <div>
-          <div style={{ color: '#f9fafb', fontWeight: 'bold' }}>Morgan</div>
-          <div style={{ color: '#6b7280', fontSize: 10 }}>Portfolio Manager</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+            <span style={{ color: C.dim, fontSize: 9 }}>CONVICTION</span>
+            <span style={{ color: C.text, fontSize: 9 }}>{agent.lastConviction}/10</span>
+          </div>
+          <div style={{ background: C.border, borderRadius: 3, height: 3, overflow: 'hidden' }}>
+            <div style={{ height: '100%', borderRadius: 3, width: `${convictionPct}%`, background: convictionPct >= 70 ? C.green : convictionPct >= 40 ? C.yellow : C.red, transition: 'width 0.5s' }} />
+          </div>
         </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
-          <Dot color={STATUS_COLOR[pm.status]} pulse={pm.status === 'thinking'} />
-          <span style={{ color: STATUS_COLOR[pm.status], fontSize: 10, textTransform: 'uppercase' }}>{pm.status}</span>
+      )}
+
+      {/* Role description — shown when idle and no conviction */}
+      {agent.status === 'idle' && !agent.lastRec && (
+        <div style={{ color: C.dim, fontSize: 10, lineHeight: 1.4, marginTop: 4, fontStyle: 'italic' }}>
+          {meta.description.split('.')[0]}.
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Conference Room ──────────────────────────────────────────────────────────
+
+function ConferenceRoom({ pm, meeting }: { pm: AgentState; meeting: Meeting }) {
+  const isActive = meeting.active
+  const hasDec = !!meeting.decision
+  const borderColor = isActive ? C.blue : hasDec ? `${recColor(meeting.decision)}44` : C.border
+
+  const VOTE_AGENTS = ['researcher', 'quant', 'macro', 'risk']
+
+  return (
+    <div style={{ background: C.panel, border: `1px solid ${borderColor}`, borderRadius: 10, padding: 16, transition: 'all 0.4s', height: '100%', boxSizing: 'border-box' }}>
+      <div style={{ color: C.muted, fontSize: 10, letterSpacing: 2, marginBottom: 12 }}>◆ CONFERENCE ROOM</div>
+
+      {/* Morgan header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: '10px 12px', background: C.card, borderRadius: 8, border: `1px solid ${C.border}` }}>
+        <span style={{ fontSize: 22 }}>🧠</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: C.bright, fontWeight: 'bold', fontSize: 13 }}>Morgan</div>
+          <div style={{ color: C.muted, fontSize: 10 }}>Portfolio Manager · makes final call</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: STATUS_COLOR[pm.status], animation: pm.status === 'thinking' ? 'pulse 1.2s infinite' : undefined }} />
+          <span style={{ color: STATUS_COLOR[pm.status], fontSize: 9, textTransform: 'uppercase' }}>{pm.status}</span>
         </div>
       </div>
 
-      {/* Meeting state */}
-      {meeting.active ? (
-        <div style={{ background: '#0c1a2e', border: '1px solid #3b82f633', borderRadius: 8, padding: 12 }}>
-          <div style={{ color: '#3b82f6', fontSize: 11, marginBottom: 6, animation: 'pulse 1s infinite' }}>
-            ● MEETING IN PROGRESS
-          </div>
-          <div style={{ color: '#93c5fd', fontSize: 12 }}>
-            Reviewing: <strong>{meeting.symbol}</strong>
-          </div>
-          <div style={{ color: '#6b7280', fontSize: 11, marginTop: 4 }}>
-            {meeting.agents.join(' · ')}
-          </div>
+      {/* Team votes — always shown if any votes present */}
+      {Object.keys(meeting.teamVotes).length > 0 && (
+        <div style={{ background: '#070c12', border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: 10 }}>
+          <div style={{ color: C.dim, fontSize: 9, letterSpacing: 1, marginBottom: 8 }}>TEAM VOTES — {meeting.symbol}</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <td style={{ color: C.dim, fontSize: 9, paddingBottom: 4 }}>AGENT</td>
+                <td style={{ color: C.dim, fontSize: 9, paddingBottom: 4, textAlign: 'center' }}>VOTE</td>
+                <td style={{ color: C.dim, fontSize: 9, paddingBottom: 4, textAlign: 'right' }}>CONVICTION</td>
+              </tr>
+            </thead>
+            <tbody>
+              {VOTE_AGENTS.map(id => {
+                const v = meeting.teamVotes[id]
+                const meta = AGENT_META[id]
+                if (!v) return null
+                return (
+                  <tr key={id} style={{ borderTop: `1px solid ${C.border}22` }}>
+                    <td style={{ padding: '5px 0', fontSize: 11 }}>
+                      <span style={{ marginRight: 5 }}>{meta.emoji}</span>
+                      <span style={{ color: C.text }}>{meta.name}</span>
+                    </td>
+                    <td style={{ textAlign: 'center', padding: '5px 0' }}>
+                      <span style={{
+                        fontSize: 10, fontWeight: 'bold', padding: '2px 8px', borderRadius: 4,
+                        background: `${recColor(v.recommendation)}22`, color: recColor(v.recommendation),
+                      }}>
+                        {v.recommendation}
+                        {v.veto && ' ⛔'}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'right', padding: '5px 0' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5 }}>
+                        <div style={{ width: 40, background: C.border, borderRadius: 2, height: 4, overflow: 'hidden' }}>
+                          <div style={{ width: `${(v.conviction / 10) * 100}%`, height: '100%', background: recColor(v.recommendation), borderRadius: 2 }} />
+                        </div>
+                        <span style={{ color: C.muted, fontSize: 10 }}>{v.conviction}/10</span>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Meeting status or decision */}
+      {isActive ? (
+        <div style={{ background: '#0c1a2e', border: `1px solid ${C.blue}33`, borderRadius: 8, padding: 12 }}>
+          <div style={{ color: C.blue, fontSize: 11, marginBottom: 4, animation: 'pulse 1s infinite' }}>● MEETING IN PROGRESS</div>
+          <div style={{ color: '#93c5fd', fontSize: 12 }}>Morgan is reviewing all reports for <strong>{meeting.symbol}</strong></div>
+          <div style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>Final BUY / SELL / HOLD / PASS decision pending...</div>
         </div>
       ) : meeting.decision ? (
-        <div style={{ background: '#0c1a14', border: `1px solid ${decisionColor(meeting.decision)}33`, borderRadius: 8, padding: 12 }}>
-          <div style={{ color: '#6b7280', fontSize: 10, marginBottom: 6 }}>LAST DECISION</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <span style={{ color: decisionColor(meeting.decision), fontSize: 18, fontWeight: 'bold' }}>
-              {meeting.decision}
-            </span>
-            <span style={{ color: '#9ca3af', fontSize: 12 }}>{meeting.symbol}</span>
+        <div style={{ background: `${recColor(meeting.decision)}0d`, border: `1px solid ${recColor(meeting.decision)}33`, borderRadius: 8, padding: 12 }}>
+          <div style={{ color: C.dim, fontSize: 9, marginBottom: 6 }}>FINAL DECISION</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
+            <span style={{ color: recColor(meeting.decision), fontSize: 28, fontWeight: 'bold', letterSpacing: 1 }}>{meeting.decision}</span>
+            <span style={{ color: C.text, fontSize: 14 }}>{meeting.symbol}</span>
+            {meeting.confidence && (
+              <span style={{ color: C.muted, fontSize: 10, marginLeft: 'auto' }}>confidence {meeting.confidence}/10</span>
+            )}
           </div>
+          {meeting.positionSizeUsd != null && meeting.positionSizeUsd > 0 && (
+            <div style={{ display: 'flex', gap: 12, marginBottom: 8 }}>
+              <div style={{ background: C.card, borderRadius: 5, padding: '4px 8px' }}>
+                <div style={{ color: C.dim, fontSize: 8 }}>POSITION SIZE</div>
+                <div style={{ color: C.text, fontSize: 11, fontWeight: 'bold' }}>{fmt$(meeting.positionSizeUsd)}</div>
+              </div>
+              {meeting.targetPrice && (
+                <div style={{ background: C.card, borderRadius: 5, padding: '4px 8px' }}>
+                  <div style={{ color: C.dim, fontSize: 8 }}>TARGET</div>
+                  <div style={{ color: C.green, fontSize: 11, fontWeight: 'bold' }}>{fmt$(meeting.targetPrice)}</div>
+                </div>
+              )}
+              {meeting.stopLoss && (
+                <div style={{ background: C.card, borderRadius: 5, padding: '4px 8px' }}>
+                  <div style={{ color: C.dim, fontSize: 8 }}>STOP LOSS</div>
+                  <div style={{ color: C.red, fontSize: 11, fontWeight: 'bold' }}>{fmt$(meeting.stopLoss)}</div>
+                </div>
+              )}
+            </div>
+          )}
           {meeting.reasoning && (
-            <div style={{ color: '#6b7280', fontSize: 10, lineHeight: 1.5, maxHeight: 56, overflow: 'hidden' }}>
-              {String(meeting.reasoning).slice(0, 180)}{String(meeting.reasoning).length > 180 ? '...' : ''}
+            <div style={{ color: C.muted, fontSize: 10, lineHeight: 1.5, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
+              {String(meeting.reasoning).slice(0, 220)}{String(meeting.reasoning).length > 220 ? '...' : ''}
             </div>
           )}
         </div>
       ) : (
-        <div style={{ color: '#374151', fontSize: 11, textAlign: 'center', padding: '16px 0' }}>
-          No meetings yet.<br />Start the orchestrator to begin.
+        <div style={{ color: C.dim, fontSize: 11, textAlign: 'center', padding: '20px 0', lineHeight: 1.7 }}>
+          No meetings yet.<br />
+          <span style={{ fontSize: 10, color: C.border }}>Start the orchestrator — Morgan reviews<br />all team reports and makes the final call.</span>
         </div>
       )}
+    </div>
+  )
+}
 
-      <div style={{ marginTop: 10, color: '#374151', fontSize: 10 }}>
-        {pm.task !== 'Standing by...' && pm.task}
+// ─── Portfolio Panel ──────────────────────────────────────────────────────────
+
+function PortfolioPanel({ portfolio, safety }: { portfolio: PortfolioState; safety: SafetyState }) {
+  const totalValue = portfolio.totalValue || safety.budget
+  const invested = totalValue - (portfolio.cash || safety.budget)
+  const pnl = totalValue - safety.budget
+  const pnlPct = safety.budget > 0 ? pnl / safety.budget : 0
+  const deployedPct = safety.budget > 0 ? invested / totalValue : 0
+
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ color: C.muted, fontSize: 10, letterSpacing: 2 }}>◆ PORTFOLIO</div>
+        <span style={{
+          marginLeft: 'auto', fontSize: 9, padding: '2px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: 1,
+          background: portfolio.mode === 'live' ? '#7f1d1d' : portfolio.mode === 'paper' ? '#1e3a5f' : '#1a2d1a',
+          color: portfolio.mode === 'live' ? '#fca5a5' : portfolio.mode === 'paper' ? '#93c5fd' : '#86efac',
+        }}>{portfolio.mode} mode</span>
+      </div>
+
+      {/* Key numbers */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ color: C.muted, fontSize: 10 }}>TOTAL VALUE</div>
+        <div style={{ color: C.bright, fontSize: 24, fontWeight: 'bold', marginTop: 2, letterSpacing: -0.5 }}>{fmt$(totalValue)}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+          <span style={{ color: pnlColor(pnl), fontSize: 13, fontWeight: 'bold' }}>{pnl >= 0 ? '+' : ''}{fmt$(pnl)}</span>
+          <span style={{ color: pnlColor(pnlPct), fontSize: 11 }}>({fmtPctSigned(pnlPct)})</span>
+          <span style={{ color: C.dim, fontSize: 10 }}>vs ${safety.budget.toLocaleString()} budget</span>
+        </div>
+      </div>
+
+      {/* Cash / Invested */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
+        <div style={{ background: C.panel, borderRadius: 6, padding: '8px 10px' }}>
+          <div style={{ color: C.dim, fontSize: 9 }}>CASH AVAILABLE</div>
+          <div style={{ color: '#93c5fd', fontSize: 13, fontWeight: 'bold', marginTop: 2 }}>{fmt$(portfolio.cash || safety.budget)}</div>
+        </div>
+        <div style={{ background: C.panel, borderRadius: 6, padding: '8px 10px' }}>
+          <div style={{ color: C.dim, fontSize: 9 }}>DEPLOYED</div>
+          <div style={{ color: C.yellow, fontSize: 13, fontWeight: 'bold', marginTop: 2 }}>{fmtPct(deployedPct)}</div>
+        </div>
+      </div>
+
+      {/* Positions */}
+      <div>
+        <div style={{ color: C.dim, fontSize: 9, letterSpacing: 1, marginBottom: 6 }}>
+          OPEN POSITIONS {portfolio.positions.length > 0 ? `(${portfolio.positions.length})` : ''}
+        </div>
+        {portfolio.positions.length === 0 ? (
+          <div style={{ color: C.border, fontSize: 11, textAlign: 'center', padding: '10px 0' }}>No open positions</div>
+        ) : portfolio.positions.map(p => {
+          const entryReturn = p.avgCost > 0 ? (p.currentPrice - p.avgCost) / p.avgCost : 0
+          return (
+            <div key={p.symbol} style={{ background: C.panel, borderRadius: 6, padding: '8px 10px', marginBottom: 5, border: `1px solid ${C.border}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: C.bright, fontWeight: 'bold', fontSize: 12 }}>{p.symbol}</span>
+                  <span style={{ color: C.muted, fontSize: 10 }}>{p.quantity} shares</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ color: pnlColor(p.unrealizedPAndL), fontSize: 12, fontWeight: 'bold' }}>
+                    {p.unrealizedPAndL >= 0 ? '+' : ''}{fmt$(p.unrealizedPAndL)}
+                  </span>
+                  <span style={{ color: pnlColor(entryReturn), fontSize: 10 }}>
+                    ({fmtPctSigned(entryReturn)})
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 12, fontSize: 10, color: C.muted }}>
+                <span>entry {fmt$(p.avgCost)}</span>
+                <span style={{ color: C.text }}>now {fmt$(p.currentPrice)}</span>
+                <span style={{ marginLeft: 'auto', color: C.dim }}>value {fmt$(p.quantity * p.currentPrice)}</span>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
 }
 
+// ─── Safety Panel ─────────────────────────────────────────────────────────────
+
 function SafetyPanel({ safety, onToggleKill }: { safety: SafetyState; onToggleKill: () => void }) {
   const killActive = safety.killSwitchActive
-  const lossBarPct = Math.min(1, safety.dailyLossPct / safety.dailyLossLimitPct)
-  const lossColor = lossBarPct > 0.8 ? '#ef4444' : lossBarPct > 0.5 ? '#eab308' : '#22c55e'
+  const lossBarPct = safety.dailyLossLimitPct > 0 ? Math.min(1, safety.dailyLossPct / safety.dailyLossLimitPct) : 0
+  const lossColor = lossBarPct > 0.8 ? C.red : lossBarPct > 0.5 ? C.yellow : C.green
 
   return (
-    <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 10, padding: 16 }}>
-      <div style={{ color: '#6b7280', fontSize: 10, letterSpacing: 2, marginBottom: 12 }}>◆ SAFETY CONTROLS</div>
+    <div style={{ background: C.card, border: `1px solid ${killActive ? C.red + '44' : C.border}`, borderRadius: 10, padding: 16, transition: 'all 0.3s' }}>
+      <div style={{ color: C.muted, fontSize: 10, letterSpacing: 2, marginBottom: 12 }}>◆ SAFETY CONTROLS</div>
 
       {/* Kill switch */}
       <button
         onClick={onToggleKill}
         style={{
-          width: '100%', padding: '10px 0', borderRadius: 8, border: 'none',
-          background: killActive ? '#7f1d1d' : '#1f2937',
-          color: killActive ? '#fca5a5' : '#6b7280',
-          fontSize: 13, fontFamily: 'inherit', cursor: 'pointer', fontWeight: 'bold',
-          boxShadow: killActive ? '0 0 16px rgba(239,68,68,0.4)' : 'none',
+          width: '100%', padding: '10px 0', borderRadius: 8, border: 'none', cursor: 'pointer',
+          background: killActive ? '#7f1d1d' : '#111827',
+          color: killActive ? '#fca5a5' : C.muted,
+          fontSize: 12, fontFamily: 'inherit', fontWeight: 'bold',
+          boxShadow: killActive ? `0 0 18px ${C.red}44` : 'none',
           transition: 'all 0.2s', letterSpacing: 1,
-          border: killActive ? '1px solid #ef444466' : '1px solid #374151',
+          outline: `1px solid ${killActive ? C.red + '55' : C.dim}`,
         }}
       >
-        {killActive ? '🔴 KILL SWITCH ACTIVE — CLICK TO RESUME' : '⬛ KILL SWITCH OFF'}
+        {killActive ? '🔴 KILL SWITCH ON — CLICK TO RESUME' : '⬛ KILL SWITCH OFF'}
       </button>
-
-      {killActive && (
-        <div style={{ marginTop: 8, color: '#ef4444', fontSize: 10, textAlign: 'center' }}>
-          All trading halted. Click to resume.
-        </div>
-      )}
-
-      {/* Daily loss bar */}
-      <div style={{ marginTop: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span style={{ color: '#6b7280', fontSize: 10 }}>DAILY LOSS</span>
-          <span style={{ color: lossColor, fontSize: 10 }}>
-            {fmtPct(safety.dailyLossPct)} / {fmtPct(safety.dailyLossLimitPct)} limit
-          </span>
-        </div>
-        <div style={{ background: '#1f2937', borderRadius: 4, height: 6, overflow: 'hidden' }}>
-          <div style={{
-            height: '100%', borderRadius: 4, transition: 'width 0.5s',
-            width: `${lossBarPct * 100}%`,
-            background: lossColor,
-            boxShadow: lossBarPct > 0.5 ? `0 0 6px ${lossColor}` : 'none',
-          }} />
-        </div>
+      <div style={{ color: C.dim, fontSize: 9, textAlign: 'center', marginTop: 5, lineHeight: 1.5 }}>
+        {killActive ? 'All trading halted. Kill switch triggered by daily loss limit or manual activation.' : 'Click to instantly halt all trading. Stop-loss sells still execute.'}
       </div>
 
-      {/* Limit badges */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
+      {/* Daily loss */}
+      <div style={{ marginTop: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+          <span style={{ color: C.muted, fontSize: 9 }}>TODAY'S LOSS</span>
+          <span style={{ color: lossColor, fontSize: 9 }}>
+            {fmtPct(safety.dailyLossPct)} used of {fmtPct(safety.dailyLossLimitPct)} limit
+          </span>
+        </div>
+        <div style={{ background: C.border, borderRadius: 4, height: 6, overflow: 'hidden' }}>
+          <div style={{ height: '100%', borderRadius: 4, width: `${lossBarPct * 100}%`, background: lossColor, transition: 'width 0.5s', boxShadow: lossBarPct > 0.5 ? `0 0 6px ${lossColor}` : 'none' }} />
+        </div>
+        <div style={{ color: C.dim, fontSize: 9, marginTop: 3 }}>Kill switch auto-fires at {fmtPct(safety.dailyLossLimitPct)} daily loss</div>
+      </div>
+
+      {/* Limit summary */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 12 }}>
         {[
-          { label: 'Max Position', value: fmtPct(safety.maxPositionPct), ok: true },
-          { label: 'Stop Loss',    value: fmtPct(safety.stopLossPct),    ok: true },
-        ].map(({ label, value, ok }) => (
-          <div key={label} style={{ background: '#0a0e14', borderRadius: 6, padding: '8px 10px', border: '1px solid #1f2937' }}>
-            <div style={{ color: '#6b7280', fontSize: 9 }}>{label}</div>
-            <div style={{ color: ok ? '#22c55e' : '#ef4444', fontSize: 13, fontWeight: 'bold', marginTop: 2 }}>{value}</div>
+          { label: 'Max per position', value: fmtPct(safety.maxPositionPct), hint: 'of total portfolio' },
+          { label: 'Stop loss per trade', value: fmtPct(safety.stopLossPct), hint: 'below entry price' },
+        ].map(({ label, value, hint }) => (
+          <div key={label} style={{ background: C.panel, borderRadius: 6, padding: '8px 10px', border: `1px solid ${C.border}` }}>
+            <div style={{ color: C.dim, fontSize: 9 }}>{label}</div>
+            <div style={{ color: C.green, fontSize: 13, fontWeight: 'bold', marginTop: 2 }}>{value}</div>
+            <div style={{ color: C.border, fontSize: 8, marginTop: 1 }}>{hint}</div>
           </div>
         ))}
       </div>
@@ -275,147 +538,66 @@ function SafetyPanel({ safety, onToggleKill }: { safety: SafetyState; onToggleKi
   )
 }
 
-function PortfolioPanel({ portfolio, safety }: { portfolio: PortfolioState; safety: SafetyState }) {
-  const totalValue = portfolio.totalValue || safety.budget
-  const pnl = totalValue - safety.budget
-  const pnlPct = safety.budget > 0 ? pnl / safety.budget : 0
-
-  return (
-    <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 10, padding: 16 }}>
-      <div style={{ color: '#6b7280', fontSize: 10, letterSpacing: 2, marginBottom: 12 }}>◆ PORTFOLIO</div>
-
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ color: '#6b7280', fontSize: 10 }}>TOTAL VALUE</div>
-        <div style={{ color: '#f9fafb', fontSize: 22, fontWeight: 'bold', marginTop: 2 }}>{fmt$(totalValue)}</div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
-        <div style={{ background: '#0a0e14', borderRadius: 6, padding: '8px 10px' }}>
-          <div style={{ color: '#6b7280', fontSize: 9 }}>CASH</div>
-          <div style={{ color: '#93c5fd', fontSize: 13, fontWeight: 'bold', marginTop: 2 }}>{fmt$(portfolio.cash || safety.budget)}</div>
-        </div>
-        <div style={{ background: '#0a0e14', borderRadius: 6, padding: '8px 10px' }}>
-          <div style={{ color: '#6b7280', fontSize: 9 }}>P&L</div>
-          <div style={{ color: pnlColor(pnl), fontSize: 13, fontWeight: 'bold', marginTop: 2 }}>
-            {pnl >= 0 ? '+' : ''}{fmt$(pnl)} ({pnl >= 0 ? '+' : ''}{fmtPct(Math.abs(pnlPct))})
-          </div>
-        </div>
-      </div>
-
-      {/* Mode badge */}
-      <div style={{ marginBottom: 10 }}>
-        <span style={{
-          fontSize: 9, padding: '3px 8px', borderRadius: 4,
-          background: portfolio.mode === 'live' ? '#7f1d1d' : portfolio.mode === 'paper' ? '#1e3a5f' : '#1a2d1a',
-          color: portfolio.mode === 'live' ? '#fca5a5' : portfolio.mode === 'paper' ? '#93c5fd' : '#86efac',
-          textTransform: 'uppercase', letterSpacing: 1,
-        }}>
-          {portfolio.mode} mode
-        </span>
-      </div>
-
-      {/* Positions */}
-      {portfolio.positions.length > 0 ? (
-        <div>
-          <div style={{ color: '#6b7280', fontSize: 9, letterSpacing: 1, marginBottom: 6 }}>OPEN POSITIONS ({portfolio.positions.length})</div>
-          {portfolio.positions.map(p => (
-            <div key={p.symbol} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', background: '#0a0e14', borderRadius: 6, marginBottom: 4, fontSize: 11 }}>
-              <div>
-                <span style={{ color: '#f9fafb', fontWeight: 'bold' }}>{p.symbol}</span>
-                <span style={{ color: '#6b7280', marginLeft: 6 }}>×{p.quantity}</span>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ color: '#9ca3af' }}>{fmt$(p.currentPrice)}</div>
-                <div style={{ color: pnlColor(p.unrealizedPAndL), fontSize: 10 }}>
-                  {p.unrealizedPAndL >= 0 ? '+' : ''}{fmt$(p.unrealizedPAndL)}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div style={{ color: '#374151', fontSize: 11, textAlign: 'center', padding: '12px 0' }}>No open positions</div>
-      )}
-    </div>
-  )
-}
+// ─── Benchmark Panel ──────────────────────────────────────────────────────────
 
 function BenchmarkPanel({ data, onRefresh }: { data: BenchmarkData | null; onRefresh: () => void }) {
   if (!data) return (
-    <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 10, padding: 16 }}>
-      <div style={{ color: '#6b7280', fontSize: 10, letterSpacing: 2 }}>◆ BENCHMARK COMPARISON</div>
-      <div style={{ color: '#374151', fontSize: 11, marginTop: 12, textAlign: 'center' }}>Loading benchmarks...</div>
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16 }}>
+      <div style={{ color: C.muted, fontSize: 10, letterSpacing: 2 }}>◆ BENCHMARK COMPARISON</div>
+      <div style={{ color: C.dim, fontSize: 11, marginTop: 12, textAlign: 'center' }}>Loading benchmarks...</div>
     </div>
   )
 
   const all = [
-    { symbol: 'MERIDIAN', name: data.portfolio.name, ret: data.portfolio.returnSinceBaseline, today: null },
-    ...data.benchmarks.map(b => ({ symbol: b.symbol, name: b.name, ret: b.returnSinceBaseline, today: b.changePct })),
+    { symbol: 'MERIDIAN', name: '▶ This Portfolio', ret: data.portfolio.returnSinceBaseline, today: null, isMe: true },
+    ...data.benchmarks.map(b => ({ symbol: b.symbol, name: b.name, ret: b.returnSinceBaseline, today: b.changePct, isMe: false })),
   ]
-
   const maxAbs = Math.max(0.01, ...all.map(e => Math.abs(e.ret)))
   const ts = data.lastUpdated ? new Date(data.lastUpdated).toLocaleTimeString('en-US', { hour12: false }) : '—'
 
   return (
-    <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 10, padding: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div style={{ color: '#6b7280', fontSize: 10, letterSpacing: 2 }}>◆ BENCHMARK COMPARISON</div>
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ color: C.muted, fontSize: 10, letterSpacing: 2 }}>◆ VS BENCHMARKS</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={{ color: '#374151', fontSize: 9 }}>updated {ts}</span>
-          <button onClick={onRefresh} style={{ padding: '3px 8px', background: '#1f2937', border: '1px solid #374151', borderRadius: 4, color: '#6b7280', fontSize: 9, fontFamily: 'inherit', cursor: 'pointer' }}>↻ Refresh</button>
+          <span style={{ color: C.dim, fontSize: 9 }}>updated {ts}</span>
+          <button onClick={onRefresh} style={{ padding: '3px 8px', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, color: C.muted, fontSize: 9, fontFamily: 'inherit', cursor: 'pointer' }}>↻</button>
         </div>
       </div>
-
-      <div style={{ fontSize: 9, color: '#374151', marginBottom: 10 }}>
-        % return from first snapshot · Nifty/Sensex in ₹ · Portfolio in $
+      <div style={{ color: C.dim, fontSize: 9, marginBottom: 10, lineHeight: 1.5 }}>
+        % return from first snapshot · Goal: beat S&P 500 (+{(data.benchmarks.find(b => b.symbol === '^GSPC')?.returnSinceBaseline ?? 0 * 100).toFixed(1)}%)
       </div>
-
-      {all.map(({ symbol, name, ret, today }) => {
-        const barPct = (ret / maxAbs) * 50 // 50% = max bar width
-        const color = ret >= 0 ? '#22c55e' : '#ef4444'
-        const isMine = symbol === 'MERIDIAN'
+      {all.map(({ symbol, name, ret, today, isMe }) => {
+        const barPct = (ret / maxAbs) * 50
+        const color = ret >= 0 ? C.green : C.red
         return (
           <div key={symbol} style={{ marginBottom: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-              <span style={{ color: isMine ? '#f9fafb' : '#9ca3af', fontSize: isMine ? 12 : 11, fontWeight: isMine ? 'bold' : 'normal' }}>
-                {isMine ? '▶ ' : ''}{name}
-              </span>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <span style={{ color: isMe ? C.bright : C.text, fontSize: isMe ? 12 : 11, fontWeight: isMe ? 'bold' : 'normal' }}>{name}</span>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 {today !== null && (
-                  <span style={{ color: today >= 0 ? '#22c55e' : '#ef4444', fontSize: 9 }}>
+                  <span style={{ color: today >= 0 ? C.green : C.red, fontSize: 9 }}>
                     {today >= 0 ? '+' : ''}{(today * 100).toFixed(2)}% today
                   </span>
                 )}
-                <span style={{ color, fontSize: 12, fontWeight: 'bold' }}>
-                  {ret >= 0 ? '+' : ''}{(ret * 100).toFixed(2)}%
-                </span>
+                <span style={{ color, fontSize: 12, fontWeight: 'bold' }}>{fmtPctSigned(ret)}</span>
               </div>
             </div>
-            <div style={{ background: '#1f2937', borderRadius: 3, height: 4, position: 'relative' }}>
-              <div style={{
-                position: 'absolute',
-                left: ret >= 0 ? '50%' : `${50 + barPct}%`,
-                width: `${Math.abs(barPct)}%`,
-                height: '100%',
-                background: color,
-                borderRadius: 3,
-                boxShadow: isMine ? `0 0 6px ${color}` : 'none',
-                transition: 'width 0.5s',
-              }} />
-              {/* centre line */}
-              <div style={{ position: 'absolute', left: '50%', top: 0, width: 1, height: '100%', background: '#374151' }} />
+            <div style={{ background: C.border, borderRadius: 3, height: 5, position: 'relative' }}>
+              <div style={{ position: 'absolute', left: ret >= 0 ? '50%' : `${50 + barPct}%`, width: `${Math.abs(barPct)}%`, height: '100%', background: color, borderRadius: 3, boxShadow: isMe ? `0 0 6px ${color}` : 'none', transition: 'width 0.5s' }} />
+              <div style={{ position: 'absolute', left: '50%', top: 0, width: 1, height: '100%', background: C.dim }} />
             </div>
           </div>
         )
       })}
-
-      <div style={{ marginTop: 10, padding: '8px 10px', background: '#0a0e14', borderRadius: 6, fontSize: 9, color: '#374151', lineHeight: 1.6 }}>
-        ⚠ Nifty 50 &amp; Sensex are INR-denominated. Alpaca only trades US markets (USD).<br />
-        To trade Indian markets, Zerodha/Upstox API integration is needed.
+      <div style={{ marginTop: 8, padding: '6px 8px', background: C.panel, borderRadius: 5, fontSize: 9, color: C.dim, lineHeight: 1.6 }}>
+        ⚠ Nifty 50 & Sensex are INR-denominated — Alpaca only trades US markets.
       </div>
     </div>
   )
 }
+
+// ─── Activity Feed ────────────────────────────────────────────────────────────
 
 function ActivityFeed({ items }: { items: FeedItem[] }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -424,36 +606,66 @@ function ActivityFeed({ items }: { items: FeedItem[] }) {
   }, [items])
 
   return (
-    <div ref={ref} style={{ height: 160, overflowY: 'auto', background: '#050a10', border: '1px solid #1f2937', borderRadius: 8, padding: '8px 12px' }}>
+    <div ref={ref} style={{ height: 280, overflowY: 'auto', background: '#040810', border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px' }}>
       {items.length === 0 ? (
-        <div style={{ color: '#374151', fontSize: 11, paddingTop: 8 }}>Waiting for activity...</div>
+        <div style={{ color: C.dim, fontSize: 11, paddingTop: 12, textAlign: 'center', lineHeight: 2 }}>
+          Waiting for activity...<br />
+          <span style={{ fontSize: 10, color: C.border }}>Agent events will appear here in real time.</span>
+        </div>
       ) : items.map(item => (
-        <div key={item.id} style={{ display: 'flex', gap: 8, marginBottom: 3, fontSize: 11, lineHeight: 1.5 }}>
-          <span style={{ color: '#374151', flexShrink: 0 }}>{item.ts}</span>
+        <div key={item.id} style={{ display: 'flex', gap: 8, marginBottom: 4, fontSize: 11, lineHeight: 1.5 }}>
+          <span style={{ color: C.dim, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{item.ts}</span>
           {item.emoji && <span style={{ flexShrink: 0 }}>{item.emoji}</span>}
-          <span style={{ color: item.color }}>{item.msg}</span>
+          <span style={{ color: item.color, wordBreak: 'break-word' }}>{item.msg}</span>
         </div>
       ))}
     </div>
   )
 }
 
-// ─── Main dashboard ───────────────────────────────────────────────────────
+// ─── Recent Trades ────────────────────────────────────────────────────────────
+
+function RecentTradesPanel({ trades }: { trades: RecentTrade[] }) {
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16 }}>
+      <div style={{ color: C.muted, fontSize: 10, letterSpacing: 2, marginBottom: 10 }}>◆ RECENT TRADES</div>
+      {trades.length === 0 ? (
+        <div style={{ color: C.border, fontSize: 11, textAlign: 'center', padding: '12px 0' }}>No trades yet this session</div>
+      ) : trades.slice(-8).reverse().map(t => (
+        <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: `1px solid ${C.border}22`, fontSize: 11 }}>
+          <span style={{ color: C.dim, fontSize: 9, flexShrink: 0 }}>{t.ts}</span>
+          <span style={{
+            fontSize: 10, fontWeight: 'bold', padding: '1px 6px', borderRadius: 3, flexShrink: 0,
+            background: t.action === 'BUY' ? `${C.green}22` : `${C.red}22`,
+            color: t.action === 'BUY' ? C.green : C.red,
+          }}>{t.action}</span>
+          <span style={{ color: C.bright, fontWeight: 'bold' }}>{t.symbol}</span>
+          <span style={{ color: C.muted }}>{t.qty}×</span>
+          <span style={{ color: C.text, marginLeft: 'auto' }}>{fmt$(t.price)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const [agents, setAgents] = useState<AgentState[]>(DEFAULT_AGENTS)
-  const [meeting, setMeeting] = useState<Meeting>({ active: false, symbol: null, decision: null, reasoning: null, agents: [] })
+  const [meeting, setMeeting] = useState<Meeting>({ active: false, symbol: null, decision: null, reasoning: null, teamVotes: {} })
   const [portfolio, setPortfolio] = useState<PortfolioState>(DEFAULT_PORTFOLIO)
   const [safety, setSafety] = useState<SafetyState>(DEFAULT_SAFETY)
   const [feed, setFeed] = useState<FeedItem[]>([])
   const [benchmarks, setBenchmarks] = useState<BenchmarkData | null>(null)
   const [connected, setConnected] = useState(false)
   const [orchestratorRunning, setOrchestratorRunning] = useState(false)
+  const [cycleInfo, setCycleInfo] = useState<CycleInfo | null>(null)
+  const [recentTrades, setRecentTrades] = useState<RecentTrade[]>([])
   const esRef = useRef<EventSource | null>(null)
 
   const addFeed = useCallback((agentId: string | undefined, msg: string, color: string) => {
     const meta = agentId ? AGENT_META[agentId] : undefined
-    setFeed(f => [...f.slice(-199), { id: Math.random().toString(36).slice(2), ts: now(), agentId, emoji: meta?.emoji, msg, color }])
+    setFeed(f => [...f.slice(-299), { id: Math.random().toString(36).slice(2), ts: nowStr(), agentId, emoji: meta?.emoji, msg, color }])
   }, [])
 
   const updateAgent = useCallback((id: string, patch: Partial<AgentState>) => {
@@ -491,7 +703,7 @@ export default function Dashboard() {
 
   const fetchBenchmarks = useCallback(async (force = false) => {
     try {
-      const r = await fetch(force ? '/api/benchmarks' : '/api/benchmarks', { method: force ? 'POST' : 'GET' })
+      const r = await fetch('/api/benchmarks', { method: force ? 'POST' : 'GET' })
       const d = await r.json()
       setBenchmarks(d)
     } catch {}
@@ -502,7 +714,6 @@ export default function Dashboard() {
       const r = await fetch('/api/agents')
       const d = await r.json()
       setOrchestratorRunning(d.orchestrator?.running ?? false)
-      // Seed agent accuracy scores
       if (d.agents) {
         setAgents(prev => prev.map(a => {
           const srv = d.agents.find((s: Record<string, unknown>) => s.id === a.id)
@@ -520,7 +731,6 @@ export default function Dashboard() {
     function connect() {
       es = new EventSource('/api/stream')
       esRef.current = es
-
       es.onopen = () => setConnected(true)
       es.onerror = () => {
         setConnected(false)
@@ -536,23 +746,56 @@ export default function Dashboard() {
         const payload = (ev.payload ?? {}) as Record<string, unknown>
         const agentId = ev.agentId as string | undefined
 
+        if (type === 'cycle_started') {
+          setCycleInfo({ symbol: payload.symbol as string, watchlistIndex: payload.watchlistIndex as number, totalSymbols: payload.totalSymbols as number })
+          // Clear team votes for new cycle
+          setMeeting(m => ({ ...m, teamVotes: {}, symbol: payload.symbol as string, active: false }))
+          addFeed(undefined, `─── New cycle: ${payload.symbol} ───`, C.dim)
+        }
+
         if (type === 'agent_update') {
           const status = (payload.status as AgentStatus) ?? 'idle'
           const task = (payload.task as string) ?? ''
-          if (agentId) updateAgent(agentId, { status, task })
-          if (task) addFeed(agentId, task, STATUS_COLOR[status] ?? '#6b7280')
+          const rec = payload.recommendation as string | undefined
+          const conv = payload.conviction as number | undefined
+          const sym = payload.symbol as string | undefined
+          const veto = payload.veto as boolean | undefined
+
+          if (agentId) {
+            updateAgent(agentId, {
+              status, task,
+              ...(rec ? { lastRec: rec, lastSymbol: sym, lastConviction: conv, lastVeto: veto } : {}),
+            })
+            // Store team vote for conference room
+            if (rec && agentId !== 'pm' && agentId !== 'trader') {
+              setMeeting(m => ({
+                ...m,
+                teamVotes: { ...m.teamVotes, [agentId]: { agentId, recommendation: rec, conviction: conv ?? 5, veto } },
+              }))
+            }
+          }
+          if (task && task !== 'Standing by...' && !task.includes('Starting cycle')) {
+            addFeed(agentId, task, STATUS_COLOR[status] ?? C.muted)
+          }
         }
 
         if (type === 'meeting_started') {
-          setMeeting(m => ({ ...m, active: true, symbol: payload.symbol as string, agents: (payload.agents as string[]) ?? [] }))
-          addFeed('pm', `Meeting started — ${payload.symbol}`, '#3b82f6')
+          setMeeting(m => ({ ...m, active: true, symbol: payload.symbol as string }))
+          addFeed('pm', `Meeting started — ${payload.symbol}`, C.blue)
         }
 
         if (type === 'decision_made') {
           const dec = payload.decision as string
-          setMeeting(m => ({ ...m, active: false, decision: dec, reasoning: payload.reasoning as string }))
-          updateAgent('pm', { status: dec === 'BUY' || dec === 'SELL' ? 'active' : 'idle', task: `Decision: ${dec} ${payload.symbol}` })
-          addFeed('pm', `Decision: ${dec} on ${payload.symbol}`, decisionColor(dec))
+          setMeeting(m => ({
+            ...m, active: false, decision: dec,
+            reasoning: payload.reasoning as string,
+            confidence: payload.confidence as number,
+            positionSizeUsd: payload.positionSizeUsd as number,
+            targetPrice: payload.targetPrice as number,
+            stopLoss: payload.stopLoss as number,
+          }))
+          updateAgent('pm', { status: dec === 'BUY' || dec === 'SELL' ? 'active' : 'idle', task: `Decision: ${dec} ${payload.symbol}`, lastRec: dec, lastSymbol: payload.symbol as string })
+          addFeed('pm', `Decision: ${dec} on ${payload.symbol} (confidence ${payload.confidence ?? '?'}/10)`, recColor(dec))
         }
 
         if (type === 'trade_executed') {
@@ -560,13 +803,14 @@ export default function Dashboard() {
           const qty = payload.quantity as number
           const price = payload.price as number
           const sym = payload.symbol as string
-          addFeed('trader', `${action} ${qty} × ${sym} @ $${price?.toFixed(2)}`, action === 'BUY' ? '#22c55e' : '#ef4444')
+          setRecentTrades(t => [...t, { id: Math.random().toString(36).slice(2), action, symbol: sym, qty, price, ts: nowStr() }])
+          addFeed('trader', `${action} ${qty} × ${sym} @ ${fmt$(price)}`, action === 'BUY' ? C.green : C.red)
           fetchPortfolio()
         }
 
         if (type === 'safety_event') {
           const msg = (payload.message ?? payload.reason) as string
-          addFeed(agentId ?? 'risk', `🛑 ${msg}`, '#ef4444')
+          addFeed(agentId ?? 'risk', `🛑 ${msg}`, C.red)
           fetchSafety()
         }
       }
@@ -582,105 +826,153 @@ export default function Dashboard() {
     const t1 = setInterval(fetchPortfolio, 10000)
     const t2 = setInterval(fetchSafety, 4000)
     const t3 = setInterval(fetchOrchStatus, 5000)
-    const t4 = setInterval(fetchBenchmarks, 60000) // benchmarks every 60s
+    const t4 = setInterval(fetchBenchmarks, 60000)
     return () => { clearInterval(t1); clearInterval(t2); clearInterval(t3); clearInterval(t4) }
   }, [fetchPortfolio, fetchSafety, fetchOrchStatus, fetchBenchmarks])
 
   const toggleOrchestrator = async () => {
     const action = orchestratorRunning ? 'stop' : 'start'
-    const opts = action === 'start' ? { mode: 'simulation', intervalMs: 300000 } : undefined
+    const opts = action === 'start' ? { mode: 'simulation', intervalMs: 15 * 60 * 1000 } : undefined
     await fetch('/api/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, options: opts }) })
     setOrchestratorRunning(!orchestratorRunning)
-    addFeed(undefined, `Orchestrator ${action}ped`, orchestratorRunning ? '#6b7280' : '#22c55e')
+    if (action === 'stop') setCycleInfo(null)
+    addFeed(undefined, `Orchestrator ${action === 'start' ? 'started' : 'stopped'}`, action === 'start' ? C.green : C.muted)
   }
 
   const toggleKillSwitch = async () => {
     const action = safety.killSwitchActive ? 'deactivate' : 'activate'
     await fetch('/api/safety', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) })
     setSafety(s => ({ ...s, killSwitchActive: !s.killSwitchActive }))
-    addFeed(undefined, `Kill switch ${action}d`, action === 'activate' ? '#ef4444' : '#22c55e')
+    addFeed(undefined, `Kill switch ${action}d`, action === 'activate' ? C.red : C.green)
   }
 
   const analyzeSymbol = async (sym: string) => {
     await fetch('/api/trading/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: sym }) })
-    addFeed(undefined, `Analysis triggered: ${sym}`, '#3b82f6')
+    addFeed(undefined, `Manual analysis triggered: ${sym}`, C.blue)
   }
 
   const pmAgent = agents.find(a => a.id === 'pm') ?? DEFAULT_AGENTS.find(a => a.id === 'pm')!
   const floorAgents = FLOOR_AGENTS.map(id => agents.find(a => a.id === id)!)
+  const activeStepIndex = PIPELINE_ORDER.findIndex(id => agents.find(a => a.id === id)?.status === 'thinking')
 
   return (
     <>
       <style>{`
-        @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
-        ::-webkit-scrollbar { width:6px }
-        ::-webkit-scrollbar-track { background:#0a0e14 }
-        ::-webkit-scrollbar-thumb { background:#1f2937; border-radius:3px }
-        button:hover { filter:brightness(1.15) }
+        * { box-sizing: border-box }
+        body { background: ${C.bg}; margin: 0; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace }
+        @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.35 } }
+        ::-webkit-scrollbar { width: 5px }
+        ::-webkit-scrollbar-track { background: #040810 }
+        ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 3px }
+        button:hover { filter: brightness(1.2) }
       `}</style>
 
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 16px 24px' }}>
+      <div style={{ maxWidth: 1360, margin: '0 auto', padding: '0 16px 32px' }}>
 
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0 12px', borderBottom: '1px solid #1f2937', marginBottom: 16 }}>
+        {/* ── Header ──────────────────────────────────────────────────────── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 0 12px', borderBottom: `1px solid ${C.border}`, marginBottom: 14 }}>
           <div>
-            <div style={{ color: '#22c55e', fontSize: 18, fontWeight: 'bold', letterSpacing: 2 }}>◆ MERIDIAN CAPITAL</div>
-            <div style={{ color: '#374151', fontSize: 10, letterSpacing: 1 }}>AI HEDGE FUND</div>
+            <div style={{ color: C.green, fontSize: 18, fontWeight: 'bold', letterSpacing: 3 }}>◆ MERIDIAN CAPITAL</div>
+            <div style={{ color: C.dim, fontSize: 10, letterSpacing: 2, marginTop: 1 }}>AUTONOMOUS AI HEDGE FUND</div>
           </div>
 
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-            {/* Connection indicator */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <div style={{ width: 7, height: 7, borderRadius: '50%', background: connected ? '#22c55e' : '#ef4444', boxShadow: connected ? '0 0 6px #22c55e' : 'none' }} />
-              <span style={{ color: '#6b7280', fontSize: 10 }}>{connected ? 'LIVE' : 'DISCONNECTED'}</span>
+          {/* Orchestrator status pill */}
+          {orchestratorRunning && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '4px 12px', background: '#052e16', border: `1px solid ${C.green}33`, borderRadius: 20 }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.green, animation: 'pulse 1.2s infinite' }} />
+              <span style={{ color: C.green, fontSize: 10 }}>
+                {cycleInfo ? `Analyzing ${cycleInfo.symbol} · ${cycleInfo.watchlistIndex + 1}/${cycleInfo.totalSymbols}` : 'Running'}
+                {activeStepIndex >= 0 && ` · Step ${activeStepIndex + 1}/6: ${AGENT_META[PIPELINE_ORDER[activeStepIndex]]?.name}`}
+              </span>
+            </div>
+          )}
+
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Connection */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 10px', background: C.panel, borderRadius: 10, border: `1px solid ${C.border}` }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: connected ? C.green : C.red, boxShadow: connected ? `0 0 5px ${C.green}` : 'none' }} />
+              <span style={{ color: C.muted, fontSize: 9 }}>{connected ? 'LIVE STREAM' : 'RECONNECTING'}</span>
             </div>
 
-            {/* Watchlist quick-trigger buttons */}
-            {['NVDA','AAPL','MSFT','GOOGL','AMZN'].map(sym => (
-              <button key={sym} onClick={() => analyzeSymbol(sym)} style={{ padding: '4px 10px', background: '#1f2937', border: '1px solid #374151', borderRadius: 5, color: '#9ca3af', fontSize: 10, fontFamily: 'inherit', cursor: 'pointer', letterSpacing: 0.5 }}>
-                {sym}
-              </button>
-            ))}
+            {/* Quick analyze */}
+            <div style={{ display: 'flex', gap: 4 }}>
+              {['NVDA', 'AAPL', 'MSFT', 'GOOGL', 'AMZN'].map(sym => (
+                <button key={sym} onClick={() => analyzeSymbol(sym)} title={`Manually trigger analysis of ${sym}`} style={{ padding: '4px 8px', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, fontSize: 9, fontFamily: 'inherit', cursor: 'pointer' }}>
+                  {sym}
+                </button>
+              ))}
+            </div>
 
-            {/* Start/Stop */}
-            <button onClick={toggleOrchestrator} style={{ padding: '6px 16px', background: orchestratorRunning ? '#422006' : '#052e16', border: `1px solid ${orchestratorRunning ? '#78350f' : '#14532d'}`, borderRadius: 6, color: orchestratorRunning ? '#fbbf24' : '#22c55e', fontSize: 11, fontFamily: 'inherit', cursor: 'pointer', fontWeight: 'bold', letterSpacing: 1 }}>
+            {/* Start / Stop */}
+            <button onClick={toggleOrchestrator} style={{
+              padding: '7px 18px', borderRadius: 6, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 'bold', fontSize: 11, letterSpacing: 1,
+              background: orchestratorRunning ? '#422006' : '#052e16',
+              color: orchestratorRunning ? '#fbbf24' : C.green,
+              outline: `1px solid ${orchestratorRunning ? '#78350f' : '#14532d'}`,
+            }}>
               {orchestratorRunning ? '⏹ STOP' : '▶ START'}
             </button>
           </div>
         </div>
 
-        {/* Main grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px 280px', gap: 12, marginBottom: 12 }}>
+        {/* ── Pipeline Flow (only when running) ───────────────────────────── */}
+        {orchestratorRunning && <PipelineFlow agents={agents} cycleInfo={cycleInfo} />}
 
-          {/* Office floor */}
+        {/* ── "What is this?" explainer when idle ─────────────────────────── */}
+        {!orchestratorRunning && (
+          <div style={{ background: '#0a0f18', border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 14 }}>
+            <span style={{ fontSize: 22 }}>💡</span>
+            <div style={{ fontSize: 11, color: C.text, lineHeight: 1.7 }}>
+              <strong style={{ color: C.bright }}>How this works:</strong> Click <strong style={{ color: C.green }}>▶ START</strong> and the system will automatically loop through 32 stocks every 15 minutes.
+              For each stock, 6 AI agents run in sequence — Alex researches, Sam runs technicals, Jordan checks macro, Drew vets the risk, Morgan decides BUY/SELL/HOLD, and Riley executes.
+              The pipeline diagram above shows the current step in real time. Use the quick buttons above to trigger an immediate analysis of any stock.
+            </div>
+          </div>
+        )}
+
+        {/* ── Main 3-column grid ───────────────────────────────────────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px 280px', gap: 12, marginBottom: 12 }}>
+
+          {/* Left: Trading Floor */}
           <div>
-            <div style={{ color: '#374151', fontSize: 10, letterSpacing: 2, marginBottom: 8 }}>◆ OFFICE FLOOR</div>
+            <div style={{ color: C.dim, fontSize: 10, letterSpacing: 2, marginBottom: 8 }}>◆ TRADING FLOOR — 5 ANALYSTS</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               {floorAgents.map(a => <AgentDesk key={a.id} agent={a} />)}
             </div>
           </div>
 
-          {/* Conference room */}
+          {/* Middle: Conference Room */}
           <div>
-            <div style={{ color: '#374151', fontSize: 10, letterSpacing: 2, marginBottom: 8 }}>◆ C-SUITE</div>
+            <div style={{ color: C.dim, fontSize: 10, letterSpacing: 2, marginBottom: 8 }}>◆ C-SUITE — MORGAN'S DECISION</div>
             <ConferenceRoom pm={pmAgent} meeting={meeting} />
           </div>
 
-          {/* Right column: portfolio + safety */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Right: Portfolio */}
+          <div>
+            <div style={{ color: C.dim, fontSize: 10, letterSpacing: 2, marginBottom: 8 }}>◆ PORTFOLIO</div>
             <PortfolioPanel portfolio={portfolio} safety={safety} />
-            <SafetyPanel safety={safety} onToggleKill={toggleKillSwitch} />
           </div>
         </div>
 
-        {/* Bottom row: benchmarks + activity feed */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        {/* ── Bottom row ───────────────────────────────────────────────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 300px', gap: 12 }}>
+
+          {/* Activity feed */}
           <div>
-            <div style={{ color: '#374151', fontSize: 10, letterSpacing: 2, marginBottom: 6 }}>◆ ACTIVITY FEED</div>
+            <div style={{ color: C.dim, fontSize: 10, letterSpacing: 2, marginBottom: 6 }}>◆ LIVE ACTIVITY FEED</div>
             <ActivityFeed items={feed} />
           </div>
+
+          {/* Benchmarks */}
           <BenchmarkPanel data={benchmarks} onRefresh={() => fetchBenchmarks(true)} />
+
+          {/* Safety + Recent trades stacked */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <SafetyPanel safety={safety} onToggleKill={toggleKillSwitch} />
+            <RecentTradesPanel trades={recentTrades} />
+          </div>
         </div>
+
       </div>
     </>
   )
