@@ -32,11 +32,21 @@ function getOrSetDailyBaseline(value: number): number {
 
 export function getDailyBaseline(): number | undefined { return g._dailyBaseline }
 
-// ── Orchestrator state ─────────────────────────────────────────────────────
-let isRunning = false
-let intervalId: ReturnType<typeof setInterval> | null = null
+// ── Orchestrator state — pinned to globalThis so HMR doesn't reset it ──────
+const og = globalThis as typeof globalThis & {
+  _orchRunning?: boolean
+  _orchInterval?: ReturnType<typeof setInterval> | null
+}
+if (og._orchRunning === undefined) og._orchRunning = false
+if (og._orchInterval === undefined) og._orchInterval = null
 
-export function isOrchestratorRunning(): boolean { return isRunning }
+// Accessors used throughout this module
+function isRunning(): boolean { return og._orchRunning ?? false }
+function setRunning(v: boolean) { og._orchRunning = v }
+function getIntervalId() { return og._orchInterval }
+function setIntervalId(id: ReturnType<typeof setInterval> | null) { og._orchInterval = id }
+
+export function isOrchestratorRunning(): boolean { return isRunning() }
 
 export interface OrchestratorConfig {
   watchlist: string[]
@@ -89,12 +99,12 @@ async function enforceStopLosses(
 
 // ── Start / Stop ───────────────────────────────────────────────────────────
 export function startOrchestrator(db: Database.Database, config: OrchestratorConfig): void {
-  if (isRunning) return
-  isRunning = true
+  if (isRunning()) return
+  setRunning(true)
 
   let index = 0
   const runCycle = async () => {
-    if (!isRunning) return
+    if (!isRunning()) return
 
     // Outer try/catch: any unhandled error here would silently kill the interval.
     // By catching at this level the interval keeps firing even if something
@@ -150,12 +160,13 @@ export function startOrchestrator(db: Database.Database, config: OrchestratorCon
   }
 
   runCycle()
-  intervalId = setInterval(runCycle, config.intervalMs)
+  setIntervalId(setInterval(runCycle, config.intervalMs))
 }
 
 export function stopOrchestrator(): void {
-  isRunning = false
-  if (intervalId) { clearInterval(intervalId); intervalId = null }
+  setRunning(false)
+  const id = getIntervalId()
+  if (id) { clearInterval(id); setIntervalId(null) }
   broadcast({ type: 'agent_update', payload: { status: 'idle', task: 'Orchestrator stopped' }, timestamp: Date.now() })
 }
 
