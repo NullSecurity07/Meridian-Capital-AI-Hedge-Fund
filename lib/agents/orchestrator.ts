@@ -6,6 +6,7 @@ import { generateMacroReport } from './macro'
 import { generatePMDecision } from './pm'
 import { executeApprovedTrade } from './trader'
 import { insertAgentReport, getPortfolio, getPositions } from '@/lib/db'
+import { refreshBenchmarks } from '@/lib/benchmarks'
 import { broadcast } from '@/lib/sse'
 import { isKillSwitchActive, checkDailyLossLimit, calculateStopLossPrice } from '@/lib/safety'
 import { getQuote } from '@/lib/market-data'
@@ -118,7 +119,10 @@ export function startOrchestrator(db: Database.Database, config: OrchestratorCon
       return
     }
 
-    // 3. Normal analysis cycle
+    // 3. Refresh benchmark prices (fire-and-forget — don't block the cycle)
+    refreshBenchmarks(db).catch(err => console.warn('[Orchestrator] Benchmark refresh failed:', err))
+
+    // 4. Normal analysis cycle
     const symbol = config.watchlist[index % config.watchlist.length]
     index++
     broadcast({ type: 'agent_update', payload: { status: 'active', task: `Starting cycle: ${symbol}` }, timestamp: Date.now() })
