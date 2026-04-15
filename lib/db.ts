@@ -117,6 +117,15 @@ export function getTradeById(db: Database.Database, id: string): Trade | undefin
   return mapTradeRow(row)
 }
 
+export function getLastBuyTrade(db: Database.Database, symbol: string, mode: TradingMode): Trade | undefined {
+  const row = db.prepare(`
+    SELECT * FROM trades WHERE symbol = ? AND mode = ? AND action = 'BUY'
+    ORDER BY created_at DESC LIMIT 1
+  `).get(symbol, mode) as Record<string, unknown> | undefined
+  if (!row) return undefined
+  return mapTradeRow(row)
+}
+
 export function updateTradeClose(
   db: Database.Database,
   id: string,

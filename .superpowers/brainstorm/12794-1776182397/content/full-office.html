@@ -1,0 +1,146 @@
+<h2>The Full Office Layout</h2>
+<p class="subtitle">The main view you'll see — agents working at desks on the left, conference room with the PM on the right. Click a desk or the conference room.</p>
+
+<div class="mockup" style="max-width:700px;margin:0 auto;">
+  <div class="mockup-header">MERIDIAN CAPITAL — HQ Dashboard</div>
+  <div class="mockup-body" style="background:#0a0e14;padding:0;border-radius:0 0 8px 8px;overflow:hidden;">
+
+    <!-- Top bar -->
+    <div style="background:#0d1117;border-bottom:1px solid #1f2937;padding:6px 12px;display:flex;align-items:center;gap:12px;font-family:monospace;font-size:9px;">
+      <div style="color:#22c55e;font-weight:bold;">● FUND ACTIVE</div>
+      <div style="color:#555;">|</div>
+      <div style="color:#aaa;">Budget: <span style="color:#f59e0b;font-weight:bold;">$25,000</span></div>
+      <div style="color:#555;">|</div>
+      <div style="color:#aaa;">P&L Today: <span style="color:#22c55e;font-weight:bold;">+$840</span></div>
+      <div style="color:#555;">|</div>
+      <div style="color:#aaa;">Positions: <span style="color:#fff;">3 open</span></div>
+      <div style="margin-left:auto;color:#555;font-size:8px;">Mon Apr 14, 2026  09:42 AM</div>
+    </div>
+
+    <!-- Main layout: two zones -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;min-height:320px;">
+
+      <!-- LEFT: Office floor -->
+      <div style="background:#0b0f16;border-right:2px solid #1f2937;padding:12px;display:flex;flex-direction:column;gap:8px;">
+        <div style="font-family:monospace;font-size:8px;color:#334155;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Research Floor</div>
+
+        <!-- Researcher desk -->
+        <div style="background:#0f1923;border:1px solid #1e3a5f;border-radius:6px;padding:8px;display:flex;gap-8px;align-items:flex-start;cursor:pointer;transition:border-color 0.2s;" onmouseenter="this.style.borderColor='#3b82f6'" onmouseleave="this.style.borderColor='#1e3a5f'">
+          <div style="display:flex;gap:8px;align-items:center;width:100%;">
+            <div style="font-size:20px;flex-shrink:0;">🧑‍💻</div>
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;">
+                <span style="font-family:monospace;font-size:9px;color:#3b82f6;font-weight:bold;">ALEX</span>
+                <span style="font-family:monospace;font-size:7px;color:#555;">· Researcher</span>
+                <div style="width:5px;height:5px;background:#22c55e;border-radius:50%;margin-left:auto;flex-shrink:0;"></div>
+              </div>
+              <div style="font-family:monospace;font-size:8px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Reading NVDA 10-K annual report...</div>
+              <div style="background:#0a1929;border-radius:3px;padding:3px 6px;margin-top:4px;font-family:monospace;font-size:7px;color:#22c55e;">📄 Found: AI revenue segment up 214% YoY</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quant desk -->
+        <div style="background:#0f1923;border:1px solid #2d1b69;border-radius:6px;padding:8px;cursor:pointer;" onmouseenter="this.style.borderColor='#7c3aed'" onmouseleave="this.style.borderColor='#2d1b69'">
+          <div style="display:flex;gap:8px;align-items:center;width:100%;">
+            <div style="font-size:20px;flex-shrink:0;">📊</div>
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;">
+                <span style="font-family:monospace;font-size:9px;color:#7c3aed;font-weight:bold;">SAM</span>
+                <span style="font-family:monospace;font-size:7px;color:#555;">· Quant Analyst</span>
+                <div style="width:5px;height:5px;background:#22c55e;border-radius:50%;margin-left:auto;flex-shrink:0;"></div>
+              </div>
+              <div style="font-family:monospace;font-size:8px;color:#64748b;">Running Monte Carlo simulation...</div>
+              <div style="background:#1a0f2e;border-radius:3px;padding:3px 6px;margin-top:4px;font-family:monospace;font-size:7px;color:#a78bfa;">📈 73% prob of +15% in 90 days (10k runs)</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Risk desk -->
+        <div style="background:#0f1923;border:1px solid #3b1515;border-radius:6px;padding:8px;cursor:pointer;" onmouseenter="this.style.borderColor='#ef4444'" onmouseleave="this.style.borderColor='#3b1515'">
+          <div style="display:flex;gap:8px;align-items:center;width:100%;">
+            <div style="font-size:20px;flex-shrink:0;">⚠️</div>
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;">
+                <span style="font-family:monospace;font-size:9px;color:#ef4444;font-weight:bold;">DREW</span>
+                <span style="font-family:monospace;font-size:7px;color:#555;">· Risk Manager</span>
+                <div style="width:5px;height:5px;background:#f59e0b;border-radius:50%;margin-left:auto;flex-shrink:0;"></div>
+              </div>
+              <div style="font-family:monospace;font-size:8px;color:#64748b;">Stress-testing NVDA position...</div>
+              <div style="background:#200f0f;border-radius:3px;padding:3px 6px;margin-top:4px;font-family:monospace;font-size:7px;color:#ef4444;">⚠ Max drawdown 18% in bear scenario</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Trader desk -->
+        <div style="background:#0f1923;border:1px solid #0f2e1f;border-radius:6px;padding:8px;cursor:pointer;" onmouseenter="this.style.borderColor='#22c55e'" onmouseleave="this.style.borderColor='#0f2e1f'">
+          <div style="display:flex;gap:8px;align-items:center;width:100%;">
+            <div style="font-size:20px;flex-shrink:0;">💹</div>
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;">
+                <span style="font-family:monospace;font-size:9px;color:#22c55e;font-weight:bold;">RILEY</span>
+                <span style="font-family:monospace;font-size:7px;color:#555;">· Trader</span>
+                <div style="width:5px;height:5px;background:#22c55e;border-radius:50%;margin-left:auto;flex-shrink:0;"></div>
+              </div>
+              <div style="font-family:monospace;font-size:8px;color:#64748b;">Monitoring order book & spreads...</div>
+              <div style="background:#0a1e0f;border-radius:3px;padding:3px 6px;margin-top:4px;font-family:monospace;font-size:7px;color:#22c55e;">✓ NVDA bid/ask spread: $0.04 — good entry</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="font-family:monospace;font-size:7px;color:#1f2937;text-align:center;margin-top:auto;padding-top:4px;">↑ click any desk to see full workscreen</div>
+      </div>
+
+      <!-- RIGHT: Conference room -->
+      <div style="background:#0d0a1a;padding:12px;display:flex;flex-direction:column;gap:8px;">
+        <div style="font-family:monospace;font-size:8px;color:#334155;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Conference Room</div>
+
+        <!-- PM boss card -->
+        <div style="background:#130e24;border:2px solid #7c3aed;border-radius:8px;padding:10px;">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <div style="font-size:28px;">🧠</div>
+            <div>
+              <div style="font-family:monospace;font-size:10px;color:#a78bfa;font-weight:bold;">MORGAN</div>
+              <div style="font-family:monospace;font-size:8px;color:#6d28d9;">Portfolio Manager</div>
+              <div style="font-family:monospace;font-size:7px;color:#555;margin-top:2px;">Awaiting team reports...</div>
+            </div>
+          </div>
+          <div style="margin-top:8px;background:#0d0820;border-radius:4px;padding:6px;font-family:monospace;font-size:8px;color:#7c3aed;">
+            "Watching NVDA. Once the team is ready, we'll decide. Budget allocation: up to $5,000."
+          </div>
+        </div>
+
+        <!-- Active topic -->
+        <div style="background:#0f1923;border:1px solid #1f2937;border-radius:6px;padding:8px;">
+          <div style="font-family:monospace;font-size:7px;color:#555;margin-bottom:4px;">CURRENT THESIS</div>
+          <div style="font-family:monospace;font-size:9px;color:#f59e0b;font-weight:bold;">NVDA — Long position candidate</div>
+          <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
+            <span style="background:#0f2e1f;color:#22c55e;font-family:monospace;font-size:7px;padding:2px 5px;border-radius:3px;">Research: 80%</span>
+            <span style="background:#1a0f2e;color:#a78bfa;font-family:monospace;font-size:7px;padding:2px 5px;border-radius:3px;">Quant: 60%</span>
+            <span style="background:#200f0f;color:#ef4444;font-family:monospace;font-size:7px;padding:2px 5px;border-radius:3px;">Risk: 40%</span>
+            <span style="background:#0a1929;color:#3b82f6;font-family:monospace;font-size:7px;padding:2px 5px;border-radius:3px;">Trader: 90%</span>
+          </div>
+        </div>
+
+        <!-- Call meeting button -->
+        <div style="background:#1a0f2e;border:1px dashed #7c3aed66;border-radius:6px;padding:10px;text-align:center;cursor:pointer;font-family:monospace;" onmouseenter="this.style.background='#250f45'" onmouseleave="this.style.background='#1a0f2e'">
+          <div style="font-size:14px;margin-bottom:3px;">🏛️</div>
+          <div style="font-size:9px;color:#7c3aed;font-weight:bold;">CALL MEETING</div>
+          <div style="font-size:7px;color:#555;margin-top:2px;">Summon agents to present their findings</div>
+        </div>
+
+        <!-- Decision log -->
+        <div style="flex:1;background:#0a0812;border:1px solid #1a1225;border-radius:6px;padding:8px;">
+          <div style="font-family:monospace;font-size:7px;color:#334155;margin-bottom:4px;">DECISION LOG</div>
+          <div style="font-family:monospace;font-size:7px;color:#22c55e;margin-bottom:2px;">✓ AAPL — BUY 12 shares @ $189.20</div>
+          <div style="font-family:monospace;font-size:7px;color:#ef4444;margin-bottom:2px;">✗ META — PASS (Risk veto)</div>
+          <div style="font-family:monospace;font-size:7px;color:#22c55e;">✓ MSFT — BUY 8 shares @ $412.40</div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:14px;font-size:11px;">Does this feel right? Tell me in the terminal — any changes to the layout, zones, agent roles, or visual style.</p>

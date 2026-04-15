@@ -1,0 +1,100 @@
+<h2>How should the agent "office" look?</h2>
+<p class="subtitle">Pick the visual metaphor that feels right for watching agents collaborate in real time</p>
+
+<div class="cards">
+  <div class="card" data-choice="trading-floor" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0f1923;padding:16px;border-radius:6px;font-family:monospace;font-size:11px;color:#00ff88;min-height:160px;display:flex;flex-direction:column;gap:8px;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
+        <span style="color:#ff4466;font-weight:bold;">● LIVE</span>
+        <span style="color:#888;font-size:10px;">HEDGE FUND COMMAND CENTER</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;flex:1;">
+        <div style="background:#0d2b1e;border:1px solid #00ff8844;border-radius:4px;padding:8px;">
+          <div style="color:#aaa;font-size:9px;margin-bottom:4px;">RESEARCHER</div>
+          <div style="color:#00ff88;font-size:10px;">Scanning AAPL news...</div>
+          <div style="color:#555;font-size:9px;margin-top:4px;">📡 Fetching data</div>
+        </div>
+        <div style="background:#1a1a0d;border:1px solid #ffff0044;border-radius:4px;padding:8px;">
+          <div style="color:#aaa;font-size:9px;margin-bottom:4px;">ANALYST</div>
+          <div style="color:#ffff44;font-size:10px;">P/E ratio looks low</div>
+          <div style="color:#555;font-size:9px;margin-top:4px;">📊 Computing risk</div>
+        </div>
+        <div style="background:#1a0d0d;border:1px solid #ff446644;border-radius:4px;padding:8px;">
+          <div style="color:#aaa;font-size:9px;margin-bottom:4px;">TRADER</div>
+          <div style="color:#ff6688;font-size:10px;">Waiting for signal...</div>
+          <div style="color:#555;font-size:9px;margin-top:4px;">⏳ Standby</div>
+        </div>
+      </div>
+      <div style="background:#111;border:1px solid #333;border-radius:4px;padding:6px;font-size:9px;color:#666;">
+        💬 Analyst → Trader: "AAPL RSI at 28, consider entry"
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Trading Floor</h3>
+      <p>Dark terminal aesthetic. Agent panels side-by-side. Real-time chat feed at the bottom. Feels like a Bloomberg terminal + mission control hybrid.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="open-office" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f5f4f0;padding:16px;border-radius:6px;min-height:160px;display:flex;flex-direction:column;gap:8px;">
+      <div style="display:flex;gap:10px;align-items:flex-start;">
+        <div style="display:flex;flex-direction:column;gap:6px;flex:1;">
+          <div style="background:white;border-radius:8px;padding:8px;box-shadow:0 1px 4px #0001;border-left:3px solid #6366f1;">
+            <div style="font-size:10px;font-weight:bold;color:#6366f1;">🔍 Researcher — Alex</div>
+            <div style="font-size:9px;color:#444;margin-top:3px;">Reading quarterly earnings report for MSFT...</div>
+            <div style="background:#f0f0ff;border-radius:3px;padding:4px;margin-top:4px;font-size:8px;color:#666;">Found: Revenue up 17% YoY</div>
+          </div>
+          <div style="background:white;border-radius:8px;padding:8px;box-shadow:0 1px 4px #0001;border-left:3px solid #10b981;">
+            <div style="font-size:10px;font-weight:bold;color:#10b981;">📊 Analyst — Sam</div>
+            <div style="font-size:9px;color:#444;margin-top:3px;">Reviewing Alex's findings on MSFT...</div>
+          </div>
+        </div>
+        <div style="width:80px;display:flex;flex-direction:column;gap:4px;">
+          <div style="background:#6366f120;border-radius:6px;padding:6px;text-align:center;font-size:9px;color:#6366f1;">Budget<br/><b>$10,000</b></div>
+          <div style="background:#10b98120;border-radius:6px;padding:6px;text-align:center;font-size:9px;color:#10b981;">P&L<br/><b>+$240</b></div>
+        </div>
+      </div>
+      <div style="background:white;border-radius:6px;padding:6px;font-size:8px;color:#888;box-shadow:0 1px 4px #0001;">
+        💬 Sam: "Alex, can you pull the debt-to-equity ratio too?"
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Open Office</h3>
+      <p>Clean, card-based layout. Each agent has a named "desk" card showing what they're doing. Friendly and readable. Chat thread between agents visible below.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="war-room" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#1a1025;padding:16px;border-radius:6px;min-height:160px;display:flex;flex-direction:column;gap:8px;">
+      <div style="display:flex;gap:8px;margin-bottom:4px;">
+        <div style="background:#7c3aed22;border:1px solid #7c3aed44;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-size:16px;">🧠</div>
+        <div style="flex:1;">
+          <div style="font-size:10px;color:#a78bfa;font-weight:bold;">PORTFOLIO MANAGER</div>
+          <div style="font-size:9px;color:#7c6fa0;margin-top:2px;">Coordinating team on NVDA position...</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <div style="flex:1;background:#110d1e;border-radius:6px;padding:6px;border:1px solid #7c3aed22;">
+          <div style="font-size:9px;color:#a78bfa;">📡 Research</div>
+          <div style="width:100%;background:#2a1f3d;height:3px;border-radius:2px;margin:4px 0;"><div style="width:70%;background:#7c3aed;height:3px;border-radius:2px;"></div></div>
+          <div style="font-size:8px;color:#6b5a8a;">Gathering data 70%</div>
+        </div>
+        <div style="flex:1;background:#110d1e;border-radius:6px;padding:6px;border:1px solid #ec489944;">
+          <div style="font-size:9px;color:#f472b6;">⚠️ Risk</div>
+          <div style="font-size:8px;color:#9c6a80;margin-top:4px;">Flagging: High volatility</div>
+        </div>
+        <div style="flex:1;background:#110d1e;border-radius:6px;padding:6px;border:1px solid #06b6d444;">
+          <div style="font-size:9px;color:#22d3ee;">📈 Quant</div>
+          <div style="font-size:8px;color:#3a8a9c;margin-top:4px;">Running Monte Carlo...</div>
+        </div>
+      </div>
+      <div style="font-size:8px;color:#6b5a8a;text-align:center;margin-top:2px;">▶ Live agent conversation feed below</div>
+    </div>
+    <div class="card-body">
+      <h3>C — War Room</h3>
+      <p>Deep purple/dark UI with a lead "Portfolio Manager" agent at the top orchestrating specialists below. Progress bars, status indicators, high-drama feel.</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:16px;font-size:12px;">Click your preferred style — or tell me in the terminal if you want a mix of ideas.</p>

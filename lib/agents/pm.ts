@@ -8,7 +8,14 @@ import { randomUUID } from 'crypto'
 const SYSTEM_PROMPT = `You are Morgan, the Portfolio Manager at Meridian Capital hedge fund.
 You receive reports from your team and make the final investment decision.
 You weigh each report by agent track record. Risk vetoes are absolute — never override them.
-Capital preservation is paramount. Aim for risk-adjusted returns.
+Capital preservation is paramount. Aim for risk-adjusted returns that BEAT the S&P 500.
+
+INVERSE ETFs: SH (ProShares Short S&P 500) and PSQ (ProShares Short QQQ) are in the watchlist.
+When Jordan (Macro) signals risk-off / bear market and the team is split or bearish, BUY SH or PSQ
+as a hedge — this is how we profit in downturns rather than sitting in cash.
+
+EARNINGS RISK: If any report flags an earnings date within 7 days, cut position_size_usd by 50%.
+
 Always output a valid JSON object with these exact fields:
 {
   "decision": "BUY|SELL|PASS|HOLD",
@@ -50,10 +57,16 @@ Conviction: ${r.conviction ?? 'N/A'}/10
 Summary: ${JSON.stringify(c).slice(0, 250)}`
   }).join('\n\n')
 
+  const macroReport = reports.find(r => r.agentId === 'macro')
+  const macroCycle = (macroReport?.content as Record<string, unknown>)?.market_cycle ?? 'uncertain'
+  const macroEnv = (macroReport?.content as Record<string, unknown>)?.macro_environment ?? 'neutral'
+  const isBearish = typeof macroCycle === 'string' && macroCycle.includes('bear')
+
   const context = `Symbol: ${symbol}
 Current Price: $${currentPrice.toFixed(2)}
 Available Budget: $${safetyConfig.budget.toFixed(2)}
 Risk Veto Active: ${riskVeto ? 'YES — YOU MUST PASS' : 'No'}
+Macro Environment: ${macroEnv} | Market Cycle: ${macroCycle}${isBearish ? ' ← BEARISH — consider SH/PSQ hedge if this IS SH or PSQ' : ''}
 
 Team Reports:
 ${reportSummaries}`

@@ -1,0 +1,150 @@
+<h2>The Conference Room — what's the vibe when agents meet?</h2>
+<p class="subtitle">This is the "all hands" view. Pick the layout that feels right for watching agents debate a stock pick.</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="boardroom-cinematic" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0c0c14;padding:10px;border-radius:6px;min-height:200px;font-family:monospace;display:flex;flex-direction:column;gap:6px;">
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #222;padding-bottom:6px;">
+        <div style="font-size:9px;color:#a78bfa;font-weight:bold;">🏛️ CONFERENCE ROOM — ACTIVE MEETING</div>
+        <div style="font-size:8px;color:#ef4444;background:#ef444420;padding:2px 6px;border-radius:10px;">● LIVE</div>
+      </div>
+      <!-- Agent seats around table -->
+      <div style="position:relative;flex:1;display:flex;align-items:center;justify-content:center;">
+        <!-- Table -->
+        <div style="background:#1a1035;border:2px solid #7c3aed44;border-radius:8px;width:160px;height:70px;display:flex;align-items:center;justify-content:center;">
+          <div style="font-size:8px;color:#333;text-align:center;">NVDA<br/><span style="color:#22c55e;font-size:10px;font-weight:bold;">$127.40</span></div>
+        </div>
+        <!-- Agents around table -->
+        <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);text-align:center;">
+          <div style="font-size:12px;">🧠</div>
+          <div style="font-size:7px;color:#f59e0b;">PM</div>
+          <div style="font-size:6px;color:#555;">Morgan</div>
+        </div>
+        <div style="position:absolute;bottom:0;left:20%;text-align:center;">
+          <div style="font-size:12px;">🔍</div>
+          <div style="font-size:7px;color:#e94560;">Research</div>
+          <div style="font-size:6px;color:#555;">Alex</div>
+        </div>
+        <div style="position:absolute;bottom:0;right:20%;text-align:center;">
+          <div style="font-size:12px;">📊</div>
+          <div style="font-size:7px;color:#6366f1;">Quant</div>
+          <div style="font-size:6px;color:#555;">Sam</div>
+        </div>
+        <div style="position:absolute;top:30%;left:-5px;text-align:center;">
+          <div style="font-size:12px;">⚠️</div>
+          <div style="font-size:7px;color:#ef4444;">Risk</div>
+          <div style="font-size:6px;color:#555;">Drew</div>
+        </div>
+        <div style="position:absolute;top:30%;right:-5px;text-align:center;">
+          <div style="font-size:12px;">💹</div>
+          <div style="font-size:7px;color:#22c55e;">Trader</div>
+          <div style="font-size:6px;color:#555;">Riley</div>
+        </div>
+      </div>
+      <!-- Live speech bubble -->
+      <div style="background:#1a1035;border:1px solid #7c3aed44;border-radius:4px;padding:5px;font-size:8px;">
+        <span style="color:#6366f1;">Sam (Quant):</span> <span style="color:#aaa;">"Monte Carlo shows 73% chance of 15% upside in 90 days given current IV."</span>
+      </div>
+      <div style="background:#0f1e0f;border:1px solid #22c55e44;border-radius:4px;padding:5px;font-size:8px;">
+        <span style="color:#ef4444;">Drew (Risk):</span> <span style="color:#aaa;">"Position size shouldn't exceed 8% of portfolio. Stop at $118."</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Boardroom</h3>
+      <p>Agents sit around a circular table. The stock being discussed floats in the center. Speech bubbles appear as agents talk. PM has the final word. Cinematic and structured.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="split-screen" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0a0f0a;padding:10px;border-radius:6px;min-height:200px;font-family:monospace;display:flex;flex-direction:column;gap:5px;">
+      <div style="font-size:8px;color:#22c55e;border-bottom:1px solid #1a2e1a;padding-bottom:4px;">NVDA PITCH SESSION — ALL AGENTS ACTIVE</div>
+      <!-- 5-panel split -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;flex:1;">
+        <div style="background:#0f1a0f;border:1px solid #22c55e33;border-radius:3px;padding:5px;">
+          <div style="font-size:7px;color:#22c55e;margin-bottom:3px;">🔍 RESEARCHER</div>
+          <div style="font-size:7px;color:#666;">Sector: Semiconductors</div>
+          <div style="font-size:7px;color:#666;">AI chip demand +40% YoY</div>
+          <div style="font-size:7px;color:#22c55e;margin-top:3px;">→ BULLISH</div>
+        </div>
+        <div style="background:#1a1a0f;border:1px solid #f59e0b33;border-radius:3px;padding:5px;">
+          <div style="font-size:7px;color:#f59e0b;margin-bottom:3px;">📊 QUANT ANALYST</div>
+          <div style="font-size:7px;color:#666;">RSI: 58 | P/E: 34x</div>
+          <div style="font-size:7px;color:#666;">Sharpe ratio: 1.8</div>
+          <div style="font-size:7px;color:#22c55e;margin-top:3px;">→ BUY SIGNAL</div>
+        </div>
+        <div style="background:#1a0f0f;border:1px solid #ef444433;border-radius:3px;padding:5px;">
+          <div style="font-size:7px;color:#ef4444;margin-bottom:3px;">⚠️ RISK MANAGER</div>
+          <div style="font-size:7px;color:#666;">Max drawdown: 12%</div>
+          <div style="font-size:7px;color:#ef4444;">⚠ High vol period</div>
+          <div style="font-size:7px;color:#f59e0b;margin-top:3px;">→ REDUCE SIZE</div>
+        </div>
+        <div style="background:#0f0f1a;border:1px solid #6366f133;border-radius:3px;padding:5px;">
+          <div style="font-size:7px;color:#6366f1;margin-bottom:3px;">🧠 PORTFOLIO MGR</div>
+          <div style="font-size:7px;color:#666;">Reviewing inputs...</div>
+          <div style="font-size:7px;color:#666;">Budget: $2,000</div>
+          <div style="font-size:7px;color:#aaa;margin-top:3px;">→ DECIDING...</div>
+        </div>
+      </div>
+      <!-- Shared chat at bottom -->
+      <div style="background:#111;border:1px solid #222;border-radius:3px;padding:4px;font-size:7px;color:#555;">
+        💬 PM → All: "Risk concern noted. Alex, what's the catalyst timeline?"
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Split Screen War Room</h3>
+      <p>Each agent gets their own panel showing their live analysis. All visible at once. A shared chat bar at the bottom. PM panel shows the final verdict. Like multiple Bloomberg screens.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="debate-stage" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0d0814;padding:10px;border-radius:6px;min-height:200px;font-family:monospace;display:flex;flex-direction:column;gap:5px;">
+      <div style="font-size:8px;color:#a78bfa;border-bottom:1px solid #2a1040;padding-bottom:4px;">⚡ INVESTMENT COMMITTEE — NVDA $127.40</div>
+      <!-- Stock card center -->
+      <div style="background:#1a1035;border:1px solid #7c3aed;border-radius:6px;padding:6px;text-align:center;">
+        <div style="font-size:10px;color:#a78bfa;font-weight:bold;">NVIDIA CORP</div>
+        <div style="display:flex;justify-content:space-evenly;margin-top:4px;">
+          <div style="font-size:7px;color:#22c55e;">↑ +2.3%</div>
+          <div style="font-size:7px;color:#aaa;">P/E 34x</div>
+          <div style="font-size:7px;color:#aaa;">Vol: HIGH</div>
+        </div>
+      </div>
+      <!-- Agent verdict cards -->
+      <div style="display:flex;gap:4px;">
+        <div style="flex:1;background:#0f1e0f;border-radius:3px;padding:4px;text-align:center;border-top:2px solid #22c55e;">
+          <div style="font-size:9px;">🔍</div>
+          <div style="font-size:6px;color:#22c55e;">BUY</div>
+          <div style="font-size:6px;color:#555;">Research</div>
+        </div>
+        <div style="flex:1;background:#0f1e0f;border-radius:3px;padding:4px;text-align:center;border-top:2px solid #22c55e;">
+          <div style="font-size:9px;">📊</div>
+          <div style="font-size:6px;color:#22c55e;">BUY</div>
+          <div style="font-size:6px;color:#555;">Quant</div>
+        </div>
+        <div style="flex:1;background:#1e0f0f;border-radius:3px;padding:4px;text-align:center;border-top:2px solid #ef4444;">
+          <div style="font-size:9px;">⚠️</div>
+          <div style="font-size:6px;color:#ef4444;">PASS</div>
+          <div style="font-size:6px;color:#555;">Risk</div>
+        </div>
+        <div style="flex:1;background:#1a1a0f;border-radius:3px;padding:4px;text-align:center;border-top:2px solid #f59e0b;">
+          <div style="font-size:9px;">📈</div>
+          <div style="font-size:6px;color:#f59e0b;">HOLD</div>
+          <div style="font-size:6px;color:#555;">Macro</div>
+        </div>
+      </div>
+      <!-- PM decision bar -->
+      <div style="background:#1a1035;border:2px solid #7c3aed;border-radius:4px;padding:5px;display:flex;align-items:center;gap:6px;">
+        <span style="font-size:10px;">🧠</span>
+        <div style="flex:1;font-size:7px;color:#a78bfa;">PM Morgan: "2/4 buy, 1 pass, 1 hold. I'm siding with research — reduced position."</div>
+        <div style="background:#22c55e;color:black;font-size:7px;padding:2px 5px;border-radius:3px;font-weight:bold;">BUY ✓</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Investment Committee Vote</h3>
+      <p>Each agent submits a verdict (BUY / SELL / PASS / HOLD) with reasoning. Votes shown as cards. PM reviews them all and makes the final call. Feels like a real investment committee.</p>
+    </div>
+  </div>
+
+</div>
+<p class="subtitle" style="margin-top:10px;font-size:11px;">The conference room and RPG office can both exist — this is just the conference room style. Click your pick.</p>

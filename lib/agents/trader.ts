@@ -1,11 +1,15 @@
 // lib/agents/trader.ts
 import { createAlpacaClient, submitOrder } from '@/lib/alpaca'
-import { insertTrade, upsertPortfolio, getPortfolio, upsertPosition, getPositions } from '@/lib/db'
+import { insertTrade, upsertPortfolio, getPortfolio, upsertPosition, getPositions, getLastBuyTrade, insertAgentMemory } from '@/lib/db'
 import { checkPositionLimit, checkBudgetLimit, isKillSwitchActive } from '@/lib/safety'
 import { broadcast } from '@/lib/sse'
-import type { AgentReport, SafetyConfig, TradingMode } from '@/types'
+import type { AgentId, AgentReport, SafetyConfig, TradingMode } from '@/types'
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'crypto'
+
+// Minimum hold time before allowing a non-forced SELL.
+// Prevents the agents from thrashing positions on short-term noise.
+const MIN_HOLD_MS = 24 * 60 * 60 * 1000 // 24 hours
 
 export async function executeApprovedTrade(
   pmDecision: AgentReport,
@@ -33,6 +37,19 @@ export async function executeApprovedTrade(
   // For sells, use actual position size rather than PM-suggested size
   let positionSizeUsd: number
   if (action === 'SELL') {
+    // Enforce minimum hold time — prevents agents flip-flopping on noise.
+    // force=true (stop-loss emergency) bypasses this check intentionally.
+    if (!force) {
+      const lastBuy = getLastBuyTrade(db, pmDecision.symbol, mode)
+      if (lastBuy) {
+        const heldMs = Date.now() - lastBuy.createdAt
+        if (heldMs < MIN_HOLD_MS) {
+          const heldHours = (heldMs / (1000 * 60 * 60)).toFixed(1)
+          return { success: false, reason: `Minimum hold not met — bought ${heldHours}h ago (min 24h)` }
+        }
+      }
+    }
+
     const positions = getPositions(db, mode)
     const existing = positions.find(p => p.symbol === pmDecision.symbol)
     positionSizeUsd = existing ? existing.quantity * currentPrice : 0
@@ -112,6 +129,33 @@ export async function executeApprovedTrade(
         mode: 'simulation',
         updatedAt: Date.now(),
       })
+
+      // ── Self-learning: write a closed-trade lesson for researcher + pm ──────
+      // This is the feedback loop that makes agents improve over time.
+      // The lesson is injected into the next analysis of this symbol via getAgentMemoryLessons().
+      if (existing) {
+        const pAndL = (currentPrice - existing.avgCost) * quantity
+        const pAndLPct = ((currentPrice - existing.avgCost) / existing.avgCost * 100).toFixed(1)
+        const won = pAndL > 0
+        const outcomeStr = `SOLD at $${currentPrice.toFixed(2)} — P&L: ${pAndL >= 0 ? '+' : ''}$${pAndL.toFixed(2)} (${pAndLPct}%)`
+        const lesson = won
+          ? `${pmDecision.symbol}: Bought $${existing.avgCost.toFixed(2)}, sold $${currentPrice.toFixed(2)}, gained ${pAndLPct}%. Thesis worked — look for similar setups.`
+          : `${pmDecision.symbol}: Bought $${existing.avgCost.toFixed(2)}, sold $${currentPrice.toFixed(2)}, lost ${pAndLPct}%. Avoid similar conditions or tighten stop loss next time.`
+
+        for (const agentId of ['researcher', 'pm'] as AgentId[]) {
+          insertAgentMemory(db, {
+            id: randomUUID(),
+            agentId,
+            tradeId,
+            symbol: pmDecision.symbol,
+            prediction: `BUY at $${existing.avgCost.toFixed(2)}`,
+            actualOutcome: outcomeStr,
+            pAndL,
+            lesson,
+            createdAt: Date.now(),
+          })
+        }
+      }
     }
 
     broadcast({ type: 'trade_executed', agentId: 'trader', payload: { tradeId, symbol: pmDecision.symbol, action, quantity, price: currentPrice, total, mode }, timestamp: Date.now() })

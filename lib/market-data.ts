@@ -6,6 +6,9 @@ import type { Quote, OHLCVBar, NewsItem } from '@/types'
 export async function getQuote(symbol: string): Promise<Quote> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const raw = await yahooFinance.quote(symbol) as any
+  // earningsTimestamp is seconds in Yahoo Finance — convert to ms
+  const earningsSec = raw.earningsTimestamp as number | undefined
+  const earningsTimestamp = earningsSec ? earningsSec * 1000 : undefined
   return {
     symbol: raw.symbol as string,
     price: (raw.regularMarketPrice as number | undefined) ?? 0,
@@ -14,6 +17,7 @@ export async function getQuote(symbol: string): Promise<Quote> {
     volume: (raw.regularMarketVolume as number | undefined) ?? 0,
     marketCap: raw.marketCap as number | undefined,
     pe: raw.trailingPE as number | undefined,
+    earningsTimestamp,
     timestamp: Date.now(),
   }
 }
