@@ -5,16 +5,14 @@ modules = ["nodejs-20", "web", "nix"]
 [nix]
 channel = "stable-25_05"
 
+# Map Replit's internal port 5000 → public port 80
 [[ports]]
-localPort = 3000
+localPort = 5000
+externalPort = 80
 
 [[ports]]
 localPort = 3003
 externalPort = 4200
-
-[[ports]]
-localPort = 5000
-externalPort = 80
 
 [deployment]
 run = ["sh", "-c", "npm run replit:start"]
