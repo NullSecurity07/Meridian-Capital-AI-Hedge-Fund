@@ -1,4 +1,6 @@
-import yahooFinance from 'yahoo-finance2'
+import YahooFinance from 'yahoo-finance2'
+
+const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey', 'ripHistorical'] })
 import type { Quote, OHLCVBar, NewsItem } from '@/types'
 
 export async function getQuote(symbol: string): Promise<Quote> {
@@ -22,20 +24,22 @@ export async function getHistoricalBars(
   endDate: string
 ): Promise<OHLCVBar[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const raw = await yahooFinance.historical(symbol, {
+  const raw = await (yahooFinance as any).chart(symbol, {
     period1: startDate,
     period2: endDate,
     interval: '1d',
-  }) as any[]
-  return raw
+  })
+  const quotes: any[] = raw?.quotes ?? raw ?? []
+  return quotes
+    .filter((b: any) => b && b.close != null)
     .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
     .map((bar: any) => ({
       date: new Date(bar.date).toISOString().split('T')[0],
-      open: bar.open,
-      high: bar.high,
-      low: bar.low,
-      close: bar.close,
-      volume: bar.volume,
+      open: bar.open ?? bar.adjclose ?? 0,
+      high: bar.high ?? 0,
+      low: bar.low ?? 0,
+      close: bar.close ?? bar.adjclose ?? 0,
+      volume: bar.volume ?? 0,
     }))
 }
 

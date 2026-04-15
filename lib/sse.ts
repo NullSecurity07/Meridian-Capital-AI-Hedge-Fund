@@ -4,7 +4,11 @@ import { randomUUID } from 'crypto'
 
 type Listener = (event: SSEEvent) => void
 
-const listeners = new Map<string, Listener>()
+// Pin to globalThis so HMR / multiple module evaluations in Next.js dev
+// all share the same listener registry within the same process.
+const g = globalThis as typeof globalThis & { _sseListeners?: Map<string, Listener> }
+if (!g._sseListeners) g._sseListeners = new Map()
+const listeners = g._sseListeners
 
 export function subscribe(listener: Listener): string {
   const id = randomUUID()
