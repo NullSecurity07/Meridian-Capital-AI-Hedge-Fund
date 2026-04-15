@@ -125,7 +125,11 @@ export function startOrchestrator(db: Database.Database, config: OrchestratorCon
     // 4. Normal analysis cycle
     const symbol = config.watchlist[index % config.watchlist.length]
     index++
-    broadcast({ type: 'agent_update', payload: { status: 'active', task: `Starting cycle: ${symbol}` }, timestamp: Date.now() })
+    broadcast({
+      type: 'cycle_started' as 'agent_update',
+      payload: { symbol, watchlistIndex: (index - 1) % config.watchlist.length, totalSymbols: config.watchlist.length, status: 'active', task: `Starting cycle: ${symbol}` },
+      timestamp: Date.now(),
+    })
     try {
       await analyzeSymbol(symbol, db, config.mode, config.safetyConfig)
     } catch (err) {
@@ -160,7 +164,7 @@ export async function analyzeSymbol(
   const research = await generateResearchReport(symbol, db)
   insertAgentReport(db, research)
   reports.push(research)
-  broadcast({ type: 'agent_update', agentId: 'researcher', payload: { status: 'active', task: `Research done: ${research.recommendation} (${research.conviction}/10)` }, timestamp: Date.now() })
+  broadcast({ type: 'agent_update', agentId: 'researcher', payload: { status: 'active', task: `Research done: ${research.recommendation} (${research.conviction}/10)`, recommendation: research.recommendation, conviction: research.conviction, symbol }, timestamp: Date.now() })
 
   if ((research.conviction ?? 0) < 5) {
     broadcast({ type: 'agent_update', agentId: 'pm', payload: { status: 'idle', task: `${symbol}: conviction ${research.conviction}/10 too low — skipping` }, timestamp: Date.now() })
@@ -172,14 +176,14 @@ export async function analyzeSymbol(
   const quant = await generateQuantReport(symbol, db)
   insertAgentReport(db, quant)
   reports.push(quant)
-  broadcast({ type: 'agent_update', agentId: 'quant', payload: { status: 'active', task: `Quant done: ${quant.recommendation}` }, timestamp: Date.now() })
+  broadcast({ type: 'agent_update', agentId: 'quant', payload: { status: 'active', task: `Quant done: ${quant.recommendation}`, recommendation: quant.recommendation, conviction: quant.conviction, symbol }, timestamp: Date.now() })
 
   // 3. Macro
   emit('macro', `Macro check on ${symbol}...`)
   const macro = await generateMacroReport(symbol, db)
   insertAgentReport(db, macro)
   reports.push(macro)
-  broadcast({ type: 'agent_update', agentId: 'macro', payload: { status: 'active', task: `Macro done: ${macro.recommendation}` }, timestamp: Date.now() })
+  broadcast({ type: 'agent_update', agentId: 'macro', payload: { status: 'active', task: `Macro done: ${macro.recommendation}`, recommendation: macro.recommendation, conviction: macro.conviction, symbol }, timestamp: Date.now() })
 
   // 4. Risk
   const quote = await getQuote(symbol)
@@ -188,7 +192,8 @@ export async function analyzeSymbol(
   const risk = await generateRiskReport(symbol, proposedSize, quote.price, db, safetyConfig)
   insertAgentReport(db, risk)
   reports.push(risk)
-  broadcast({ type: 'agent_update', agentId: 'risk', payload: { status: 'active', task: `Risk done: ${risk.recommendation}`, veto: (risk.content as Record<string, unknown>).veto }, timestamp: Date.now() })
+  const riskVeto = (risk.content as Record<string, unknown>).veto as boolean
+  broadcast({ type: 'agent_update', agentId: 'risk', payload: { status: 'active', task: `Risk done: ${risk.recommendation}${riskVeto ? ' ⛔ VETO' : ''}`, recommendation: risk.recommendation, conviction: risk.conviction, veto: riskVeto, symbol }, timestamp: Date.now() })
 
   // 5. PM decision
   broadcast({ type: 'meeting_started', payload: { symbol, agents: ['researcher', 'quant', 'risk', 'macro'] }, timestamp: Date.now() })
@@ -196,7 +201,8 @@ export async function analyzeSymbol(
   const pmDecision = await generatePMDecision(symbol, reports, quote.price, db, safetyConfig)
   insertAgentReport(db, pmDecision)
   reports.push(pmDecision)
-  broadcast({ type: 'decision_made', agentId: 'pm', payload: { symbol, decision: pmDecision.recommendation, reasoning: (pmDecision.content as Record<string, unknown>).reasoning }, timestamp: Date.now() })
+  const pmContent = pmDecision.content as Record<string, unknown>
+  broadcast({ type: 'decision_made', agentId: 'pm', payload: { symbol, decision: pmDecision.recommendation, reasoning: pmContent.reasoning, confidence: pmDecision.conviction, positionSizeUsd: pmContent.position_size_usd, targetPrice: pmContent.target_price, stopLoss: pmContent.stop_loss }, timestamp: Date.now() })
 
   // 6. Execute
   if (pmDecision.recommendation === 'BUY' || pmDecision.recommendation === 'SELL') {
