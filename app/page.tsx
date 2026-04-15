@@ -32,6 +32,18 @@ interface SafetyState {
   stopLossPct: number; budget: number
 }
 
+interface BenchmarkEntry {
+  symbol: string; name: string
+  returnSinceBaseline: number; changePct: number
+  currentPrice: number
+}
+
+interface BenchmarkData {
+  portfolio: { name: string; returnSinceBaseline: number; currentValue: number; budget: number }
+  benchmarks: BenchmarkEntry[]
+  lastUpdated: number | null
+}
+
 interface FeedItem {
   id: string; ts: string; agentId?: string; emoji?: string
   msg: string; color: string
@@ -328,6 +340,83 @@ function PortfolioPanel({ portfolio, safety }: { portfolio: PortfolioState; safe
   )
 }
 
+function BenchmarkPanel({ data, onRefresh }: { data: BenchmarkData | null; onRefresh: () => void }) {
+  if (!data) return (
+    <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 10, padding: 16 }}>
+      <div style={{ color: '#6b7280', fontSize: 10, letterSpacing: 2 }}>◆ BENCHMARK COMPARISON</div>
+      <div style={{ color: '#374151', fontSize: 11, marginTop: 12, textAlign: 'center' }}>Loading benchmarks...</div>
+    </div>
+  )
+
+  const all = [
+    { symbol: 'MERIDIAN', name: data.portfolio.name, ret: data.portfolio.returnSinceBaseline, today: null },
+    ...data.benchmarks.map(b => ({ symbol: b.symbol, name: b.name, ret: b.returnSinceBaseline, today: b.changePct })),
+  ]
+
+  const maxAbs = Math.max(0.01, ...all.map(e => Math.abs(e.ret)))
+  const ts = data.lastUpdated ? new Date(data.lastUpdated).toLocaleTimeString('en-US', { hour12: false }) : '—'
+
+  return (
+    <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 10, padding: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div style={{ color: '#6b7280', fontSize: 10, letterSpacing: 2 }}>◆ BENCHMARK COMPARISON</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ color: '#374151', fontSize: 9 }}>updated {ts}</span>
+          <button onClick={onRefresh} style={{ padding: '3px 8px', background: '#1f2937', border: '1px solid #374151', borderRadius: 4, color: '#6b7280', fontSize: 9, fontFamily: 'inherit', cursor: 'pointer' }}>↻ Refresh</button>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 9, color: '#374151', marginBottom: 10 }}>
+        % return from first snapshot · Nifty/Sensex in ₹ · Portfolio in $
+      </div>
+
+      {all.map(({ symbol, name, ret, today }) => {
+        const barPct = (ret / maxAbs) * 50 // 50% = max bar width
+        const color = ret >= 0 ? '#22c55e' : '#ef4444'
+        const isMine = symbol === 'MERIDIAN'
+        return (
+          <div key={symbol} style={{ marginBottom: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+              <span style={{ color: isMine ? '#f9fafb' : '#9ca3af', fontSize: isMine ? 12 : 11, fontWeight: isMine ? 'bold' : 'normal' }}>
+                {isMine ? '▶ ' : ''}{name}
+              </span>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                {today !== null && (
+                  <span style={{ color: today >= 0 ? '#22c55e' : '#ef4444', fontSize: 9 }}>
+                    {today >= 0 ? '+' : ''}{(today * 100).toFixed(2)}% today
+                  </span>
+                )}
+                <span style={{ color, fontSize: 12, fontWeight: 'bold' }}>
+                  {ret >= 0 ? '+' : ''}{(ret * 100).toFixed(2)}%
+                </span>
+              </div>
+            </div>
+            <div style={{ background: '#1f2937', borderRadius: 3, height: 4, position: 'relative' }}>
+              <div style={{
+                position: 'absolute',
+                left: ret >= 0 ? '50%' : `${50 + barPct}%`,
+                width: `${Math.abs(barPct)}%`,
+                height: '100%',
+                background: color,
+                borderRadius: 3,
+                boxShadow: isMine ? `0 0 6px ${color}` : 'none',
+                transition: 'width 0.5s',
+              }} />
+              {/* centre line */}
+              <div style={{ position: 'absolute', left: '50%', top: 0, width: 1, height: '100%', background: '#374151' }} />
+            </div>
+          </div>
+        )
+      })}
+
+      <div style={{ marginTop: 10, padding: '8px 10px', background: '#0a0e14', borderRadius: 6, fontSize: 9, color: '#374151', lineHeight: 1.6 }}>
+        ⚠ Nifty 50 &amp; Sensex are INR-denominated. Alpaca only trades US markets (USD).<br />
+        To trade Indian markets, Zerodha/Upstox API integration is needed.
+      </div>
+    </div>
+  )
+}
+
 function ActivityFeed({ items }: { items: FeedItem[] }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -357,6 +446,7 @@ export default function Dashboard() {
   const [portfolio, setPortfolio] = useState<PortfolioState>(DEFAULT_PORTFOLIO)
   const [safety, setSafety] = useState<SafetyState>(DEFAULT_SAFETY)
   const [feed, setFeed] = useState<FeedItem[]>([])
+  const [benchmarks, setBenchmarks] = useState<BenchmarkData | null>(null)
   const [connected, setConnected] = useState(false)
   const [orchestratorRunning, setOrchestratorRunning] = useState(false)
   const esRef = useRef<EventSource | null>(null)
@@ -396,6 +486,14 @@ export default function Dashboard() {
       const r = await fetch('/api/safety')
       const d = await r.json()
       setSafety(d)
+    } catch {}
+  }, [])
+
+  const fetchBenchmarks = useCallback(async (force = false) => {
+    try {
+      const r = await fetch(force ? '/api/benchmarks' : '/api/benchmarks', { method: force ? 'POST' : 'GET' })
+      const d = await r.json()
+      setBenchmarks(d)
     } catch {}
   }, [])
 
@@ -480,12 +578,13 @@ export default function Dashboard() {
 
   // Polling
   useEffect(() => {
-    fetchPortfolio(); fetchSafety(); fetchOrchStatus()
+    fetchPortfolio(); fetchSafety(); fetchOrchStatus(); fetchBenchmarks()
     const t1 = setInterval(fetchPortfolio, 10000)
     const t2 = setInterval(fetchSafety, 4000)
     const t3 = setInterval(fetchOrchStatus, 5000)
-    return () => { clearInterval(t1); clearInterval(t2); clearInterval(t3) }
-  }, [fetchPortfolio, fetchSafety, fetchOrchStatus])
+    const t4 = setInterval(fetchBenchmarks, 60000) // benchmarks every 60s
+    return () => { clearInterval(t1); clearInterval(t2); clearInterval(t3); clearInterval(t4) }
+  }, [fetchPortfolio, fetchSafety, fetchOrchStatus, fetchBenchmarks])
 
   const toggleOrchestrator = async () => {
     const action = orchestratorRunning ? 'stop' : 'start'
@@ -574,10 +673,13 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Activity feed */}
-        <div>
-          <div style={{ color: '#374151', fontSize: 10, letterSpacing: 2, marginBottom: 6 }}>◆ ACTIVITY FEED</div>
-          <ActivityFeed items={feed} />
+        {/* Bottom row: benchmarks + activity feed */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <div style={{ color: '#374151', fontSize: 10, letterSpacing: 2, marginBottom: 6 }}>◆ ACTIVITY FEED</div>
+            <ActivityFeed items={feed} />
+          </div>
+          <BenchmarkPanel data={benchmarks} onRefresh={() => fetchBenchmarks(true)} />
         </div>
       </div>
     </>

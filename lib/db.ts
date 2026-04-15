@@ -88,6 +88,16 @@ export function initDb(db: Database.Database): void {
       details TEXT NOT NULL,
       created_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS benchmarks (
+      symbol TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      current_price REAL NOT NULL,
+      baseline_price REAL NOT NULL,
+      change_pct REAL NOT NULL,
+      return_since_baseline REAL NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `)
 }
 
@@ -244,6 +254,40 @@ export function getPositions(db: Database.Database, mode: TradingMode): Position
     currentPrice: r.current_price as number,
     unrealizedPAndL: r.unrealized_p_and_l as number,
     mode: r.mode as TradingMode,
+    updatedAt: r.updated_at as number,
+  }))
+}
+
+export interface BenchmarkRow {
+  symbol: string; name: string
+  currentPrice: number; baselinePrice: number
+  changePct: number; returnSinceBaseline: number
+  updatedAt: number
+}
+
+export function upsertBenchmark(db: Database.Database, b: BenchmarkRow): void {
+  // Only set baselinePrice on first insert; preserve it on subsequent updates
+  db.prepare(`
+    INSERT INTO benchmarks (symbol, name, current_price, baseline_price, change_pct, return_since_baseline, updated_at)
+    VALUES (@symbol, @name, @currentPrice, @baselinePrice, @changePct, @returnSinceBaseline, @updatedAt)
+    ON CONFLICT(symbol) DO UPDATE SET
+      name = @name,
+      current_price = @currentPrice,
+      change_pct = @changePct,
+      return_since_baseline = (current_price - baseline_price) / baseline_price,
+      updated_at = @updatedAt
+  `).run(b)
+}
+
+export function getBenchmarks(db: Database.Database): BenchmarkRow[] {
+  const rows = db.prepare('SELECT * FROM benchmarks ORDER BY symbol').all() as Record<string, unknown>[]
+  return rows.map(r => ({
+    symbol: r.symbol as string,
+    name: r.name as string,
+    currentPrice: r.current_price as number,
+    baselinePrice: r.baseline_price as number,
+    changePct: r.change_pct as number,
+    returnSinceBaseline: r.return_since_baseline as number,
     updatedAt: r.updated_at as number,
   }))
 }
