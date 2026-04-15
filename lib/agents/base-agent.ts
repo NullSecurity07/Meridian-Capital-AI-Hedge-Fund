@@ -1,12 +1,33 @@
 // lib/agents/base-agent.ts
-import Anthropic from '@anthropic-ai/sdk'
+// Uses free LLM providers via OpenAI-compatible API:
+//   - Groq free tier (set GROQ_API_KEY) — cloud, no GPU needed
+//   - Ollama (default) — fully local, no account, no rate limits
+//     Install: https://ollama.com  then  ollama pull qwen2.5:7b
+import OpenAI from 'openai'
 import type { AgentId } from '@/types'
 
-if (!process.env.ANTHROPIC_API_KEY) {
-  throw new Error('ANTHROPIC_API_KEY must be set in environment')
+function createLLMClient(): OpenAI {
+  if (process.env.GROQ_API_KEY) {
+    return new OpenAI({
+      apiKey: process.env.GROQ_API_KEY,
+      baseURL: 'https://api.groq.com/openai/v1',
+    })
+  }
+  // Ollama: no API key needed — 'ollama' is a required non-empty placeholder
+  return new OpenAI({
+    apiKey: 'ollama',
+    baseURL: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434/v1',
+  })
 }
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+function getDefaultModel(): string {
+  if (process.env.LLM_MODEL) return process.env.LLM_MODEL
+  if (process.env.GROQ_API_KEY) return 'llama-3.3-70b-versatile'
+  return 'qwen2.5:7b'
+}
+
+const client = createLLMClient()
+const MODEL = getDefaultModel()
 
 export interface AgentConfig {
   id: AgentId
@@ -42,24 +63,25 @@ export async function runAgent(
 ): Promise<AgentResponse> {
   const systemPrompt = buildSystemPromptWithMemory(config.systemPrompt, memoryLessons)
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
+  const response = await client.chat.completions.create({
+    model: MODEL,
     max_tokens: config.maxTokens ?? 1024,
-    system: systemPrompt,
-    messages: messages.map(m => ({ role: m.role, content: m.content })),
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+    ],
   })
 
-  const textBlock = response.content.find(b => b.type === 'text')
-  if (!textBlock || textBlock.type !== 'text') {
-    console.warn(`[${config.id}] runAgent: no text block in response — returning empty content`)
-    return { content: '', usage: { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens } }
+  const text = response.choices[0]?.message?.content ?? ''
+  if (!text) {
+    console.warn(`[${config.id}] runAgent: empty response from model`)
   }
 
   return {
-    content: textBlock.text,
+    content: text,
     usage: {
-      inputTokens: response.usage.input_tokens,
-      outputTokens: response.usage.output_tokens,
+      inputTokens: response.usage?.prompt_tokens ?? 0,
+      outputTokens: response.usage?.completion_tokens ?? 0,
     },
   }
 }
