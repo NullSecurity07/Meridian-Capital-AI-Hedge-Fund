@@ -1,18 +1,20 @@
 import type { SafetyConfig } from '@/types'
 
-let killSwitchActive = false
+// Pin to globalThis so Next.js HMR never silently resets the kill switch
+const g = globalThis as typeof globalThis & { _killSwitchActive?: boolean }
+if (g._killSwitchActive === undefined) g._killSwitchActive = false
 
 export function isKillSwitchActive(): boolean {
-  return killSwitchActive
+  return g._killSwitchActive!
 }
 
 export function activateKillSwitch(reason: string): void {
-  killSwitchActive = true
+  g._killSwitchActive = true
   console.error(`[KILL SWITCH ACTIVATED] ${reason}`)
 }
 
 export function deactivateKillSwitch(reason = 'Manual deactivation'): void {
-  killSwitchActive = false
+  g._killSwitchActive = false
   console.info(`[KILL SWITCH DEACTIVATED] ${reason}`)
 }
 
