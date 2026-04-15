@@ -833,8 +833,9 @@ export default function Dashboard() {
 
   const toggleOrchestrator = async () => {
     const action = orchestratorRunning ? 'stop' : 'start'
-    const opts = action === 'start' ? { mode: 'simulation', intervalMs: 15 * 60 * 1000 } : undefined
-    await fetch('/api/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, options: opts }) })
+    // No options passed on start — server uses TRADING_MODE env var and DEFAULT_OPTIONS.
+    // Sending mode: 'simulation' here would override the user's .env.local setting.
+    await fetch('/api/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) })
     setOrchestratorRunning(!orchestratorRunning)
     if (action === 'stop') setCycleInfo(null)
     addFeed(undefined, `Orchestrator ${action === 'start' ? 'started' : 'stopped'}`, action === 'start' ? C.green : C.muted)
@@ -919,14 +920,15 @@ export default function Dashboard() {
         {/* ── Pipeline Flow (only when running) ───────────────────────────── */}
         {orchestratorRunning && <PipelineFlow agents={agents} cycleInfo={cycleInfo} />}
 
-        {/* ── "What is this?" explainer when idle ─────────────────────────── */}
+        {/* ── Status banner ────────────────────────────────────────────────── */}
         {!orchestratorRunning && (
           <div style={{ background: '#0a0f18', border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 14 }}>
-            <span style={{ fontSize: 22 }}>💡</span>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: C.yellow, animation: 'pulse 1.2s infinite', flexShrink: 0 }} />
             <div style={{ fontSize: 11, color: C.text, lineHeight: 1.7 }}>
-              <strong style={{ color: C.bright }}>How this works:</strong> Click <strong style={{ color: C.green }}>▶ START</strong> and the system will automatically loop through 32 stocks every 15 minutes.
-              For each stock, 6 AI agents run in sequence — Alex researches, Sam runs technicals, Jordan checks macro, Drew vets the risk, Morgan decides BUY/SELL/HOLD, and Riley executes.
-              The pipeline diagram above shows the current step in real time. Use the quick buttons above to trigger an immediate analysis of any stock.
+              <strong style={{ color: C.bright }}>Initialising…</strong>{' '}
+              The orchestrator starts automatically — no action needed. 6 AI agents will loop through 32 stocks every 15 minutes, research each one, and execute trades when conditions are met.
+              If it doesn't start within 10 seconds, check that your <code style={{ color: C.yellow, fontSize: 10 }}>GROQ_API_KEY</code> is set in Secrets.
+              The <strong style={{ color: C.green }}>▶ START</strong> button lets you manually restart if you stopped it.
             </div>
           </div>
         )}
