@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 5000 -H 0.0.0.0",
     "build": "next build",
-    "start": "next start",
-    "replit:start": "npm install && ([ -d .next ] || next build) && next start",
+    "start": "next start -p 5000 -H 0.0.0.0",
+    "replit:dev": "npm install && next dev -p 5000 -H 0.0.0.0",
+    "replit:start": "npm install && ([ -d .next ] || next build) && next start -p 5000 -H 0.0.0.0",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"

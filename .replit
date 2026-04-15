@@ -1,14 +1,45 @@
 run = "npm run replit:start"
 entrypoint = "app/page.tsx"
+modules = ["nodejs-20", "web", "nix"]
 
 [nix]
-channel = "stable-24_05"
+channel = "stable-25_05"
 
-# Map Replit's internal port 3000 → public port 80
 [[ports]]
 localPort = 3000
+externalPort = 80
+
+[[ports]]
+localPort = 5000
 externalPort = 80
 
 [deployment]
 run = ["sh", "-c", "npm run replit:start"]
 deploymentTarget = "cloudrun"
+
+[agent]
+expertMode = true
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
