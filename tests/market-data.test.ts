@@ -1,23 +1,28 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { getQuote, getHistoricalBars, getNewsHeadlines } from '@/lib/market-data'
 
-vi.mock('yahoo-finance2', () => ({
-  default: {
-    quote: vi.fn().mockResolvedValue({
-      symbol: 'NVDA',
-      regularMarketPrice: 127.40,
-      regularMarketChange: 2.90,
-      regularMarketChangePercent: 2.33,
-      regularMarketVolume: 45000000,
-      marketCap: 3100000000000,
-      trailingPE: 34.2,
-    }),
-    historical: vi.fn().mockResolvedValue([
-      { date: new Date('2026-04-10'), open: 125, high: 129, low: 124, close: 127.40, volume: 45000000 },
-      { date: new Date('2026-04-09'), open: 122, high: 126, low: 121, close: 125, volume: 42000000 },
-    ]),
-  },
-}))
+vi.mock('yahoo-finance2', () => {
+  const MockYahooFinance = vi.fn(function() {
+    return {
+      quote: vi.fn().mockResolvedValue({
+        symbol: 'NVDA',
+        regularMarketPrice: 127.40,
+        regularMarketChange: 2.90,
+        regularMarketChangePercent: 2.33,
+        regularMarketVolume: 45000000,
+        marketCap: 3100000000000,
+        trailingPE: 34.2,
+      }),
+      chart: vi.fn().mockResolvedValue({
+        quotes: [
+          { date: new Date('2026-04-10'), open: 125, high: 129, low: 124, close: 127.40, volume: 45000000 },
+          { date: new Date('2026-04-09'), open: 122, high: 126, low: 121, close: 125, volume: 42000000 },
+        ],
+      }),
+    }
+  })
+  return { default: MockYahooFinance }
+})
 
 global.fetch = vi.fn().mockResolvedValue({
   ok: true,
